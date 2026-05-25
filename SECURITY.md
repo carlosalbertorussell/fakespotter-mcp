@@ -14,7 +14,7 @@ We only support the latest version of FakeSpotter. Security updates are applied 
 
 If you discover a security vulnerability in FakeSpotter, please report it privately. **Do not create a public GitHub Issue for security vulnerabilities.**
 
-Please send your report to **[INSERT YOUR EMAIL HERE]**.
+Please send your report to **carlos.a.russell@gmail.com**.
 
 ### What to include in your report:
 * **Description:** A detailed explanation of the vulnerability.
