@@ -1,0 +1,20 @@
+{
+  "report_title": "Reporte Forense FakeSpotter",
+  "verdict_authentic": "✓ AUTÉNTICO / VERIFICADO",
+  "verdict_fake": "🚨 FALSIFICACIÓN / CONTRAFACCIÓN DETECTADA",
+  "verdict_uncertain": "⚠ INCIERTO — SE REQUIERE REVISIÓN MANUAL",
+  "no_flags": "Sin anomalías detectadas",
+  "status": "Estado",
+  "confidence": "Nivel de Confianza",
+  "date_label": "Fecha/Hora",
+  "verdict_label": "Veredicto",
+  "hash_label": "Integridad SHA-256",
+  "report_id": "ID de Reporte",
+  "forensic_flags": "Alertas Forenses",
+  "errors": {
+    "not_found": "Recurso no encontrado",
+    "timeout": "Tiempo de espera agotado",
+    "too_large": "El archivo excede el tamaño máximo permitido",
+    "unsupported_type": "Tipo de archivo no compatible"
+  }
+}
