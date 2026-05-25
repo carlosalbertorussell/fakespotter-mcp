@@ -1,5 +1,7 @@
 # 🕵️‍♂️ FakeSpotter MCP
 
+[![MCPize](https://mcpize.com/badge/@crussell/fakespotter)](https://mcpize.com/mcp/fakespotter)
+
 **AI-Powered Forensic Suite — Automated digital evidence authentication for the era of generative content.**
 
 Built for AI agents, security teams, and auditors via the [Model Context Protocol](https://modelcontextprotocol.io).
