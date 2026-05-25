@@ -74,12 +74,8 @@ logger.info("FakeSpotter MCP server initialised — 18 forensic tools registered
 
 if __name__ == "__main__":
     import os
-    port = int(os.environ.get("PORT", 8081))
-    stdio_mode = os.environ.get("FAKESPOTTER_TRANSPORT", "") == "stdio"
-
-    if stdio_mode:
-        logger.info("Starting FakeSpotter in stdio mode")
-        mcp.run()
-    else:
-        logger.info("Starting FakeSpotter in SSE mode on port %d", port)
-        mcp.run(transport="sse", host="0.0.0.0", port=port)
+    PORT = int(os.environ.get("PORT", 8081))
+    mcp.host = "0.0.0.0"
+    mcp.port = PORT
+    logger.info("Starting FakeSpotter on 0.0.0.0:%d", PORT)
+    mcp.run(transport="streamable-http")
