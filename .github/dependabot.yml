@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # 1. Actualizaciones para tus librerías de Python
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # 2. Actualizaciones para tu imagen base de Docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
