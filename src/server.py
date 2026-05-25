@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+import os
+_PORT = int(os.environ.get("PORT", 8081))
 
 # Ensure src/ is on the path for relative imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -42,6 +44,8 @@ logger = logging.getLogger("fakespotter")
 
 mcp = FastMCP(
     "fakespotter_mcp",
+    host="0.0.0.0",
+    port=_PORT,
     instructions=(
         "FakeSpotter is an AI-powered forensic suite for digital evidence authentication. "
         "It detects deepfakes, AI-generated content, counterfeit documents, phishing, "
@@ -52,7 +56,6 @@ mcp = FastMCP(
         "Supported languages: 'en' (English) and 'es' (Spanish)."
     ),
 )
-
 
 # ---------------------------------------------------------------------------
 # Register all 18 tools
@@ -73,9 +76,5 @@ logger.info("FakeSpotter MCP server initialised — 18 forensic tools registered
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import os
-    PORT = int(os.environ.get("PORT", 8081))
-    mcp.host = "0.0.0.0"
-    mcp.port = PORT
-    logger.info("Starting FakeSpotter on 0.0.0.0:%d", PORT)
+    logger.info("Starting FakeSpotter on 0.0.0.0:%d", _PORT)
     mcp.run(transport="streamable-http")
