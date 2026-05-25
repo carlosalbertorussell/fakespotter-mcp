@@ -1,0 +1,20 @@
+{
+  "report_title": "FakeSpotter Forensic Report",
+  "verdict_authentic": "✓ AUTHENTIC / VERIFIED",
+  "verdict_fake": "🚨 FAKE / COUNTERFEIT DETECTED",
+  "verdict_uncertain": "⚠ UNCERTAIN — MANUAL REVIEW REQUIRED",
+  "no_flags": "No anomalies detected",
+  "status": "Status",
+  "confidence": "Confidence Level",
+  "date_label": "Date/Time",
+  "verdict_label": "Verdict",
+  "hash_label": "SHA-256 Integrity",
+  "report_id": "Report ID",
+  "forensic_flags": "Forensic Flags",
+  "errors": {
+    "not_found": "Resource not found",
+    "timeout": "Request timed out",
+    "too_large": "File exceeds maximum allowed size",
+    "unsupported_type": "Unsupported file type"
+  }
+}
