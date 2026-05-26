@@ -1,27 +1,22 @@
 # MCPize Configuration
 # Docs: https://mcpize.com/docs/mcpize-yaml
-
 version: 1
-
 name: "FakeSpotter"
 slug: "fakespotter"
-
 runtime: python
 entry: "src/server.py"
-
 build:
   install: "pip install -r requirements.txt"
   dockerfile: "Dockerfile"
-
 start:
   type: http
   command: "python"
   args:
     - "src/server.py"
-
 bridge:
   mode: http
-
 credentials:
   - name: "FAKESPOTTER_SECRET"
-    description: "Cryptographic signing key for Forensic Certificates"
+    description: "Your personal cryptographic signing key for Forensic Certificates. Generate one at: python -c \"import secrets; print(secrets.token_hex(32))\". This key signs YOUR certificates — chain of custody stays with you."
+    mode: per_user
+    required: false
