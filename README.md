@@ -14,7 +14,7 @@ FakeSpotter acts as your **Digital Forensic Expert**. Whether validating the aut
 
 ## ⚡ Quick Start (Hosted)
 
-Add to your IDE MCP config file:
+Add to your IDE MCP config:
 
 ```json
 {
@@ -27,9 +27,39 @@ Add to your IDE MCP config file:
 }
 ```
 
-Restart your IDE. FakeSpotter tools will appear automatically.
+Restart your IDE. All 18 FakeSpotter tools appear automatically.
 
 > 50 free calls/month. Payments via x402 — USDC on Base.
+
+---
+
+## 🔍 Quick Start: Real-World Example
+
+**Scenario:** A finance team receives an invoice via email and needs to verify it before payment.
+
+**Step 1 — Scan the sender's email headers for spoofing:**
+```
+Use FakeSpotter to check these email headers for spoofing: [paste raw headers]
+```
+FakeSpotter checks SPF, DKIM, DMARC, From/Return-Path mismatches, and Reply-To hijacking.
+
+**Step 2 — Verify the invoice PDF hasn't been altered:**
+```
+Use FakeSpotter to verify this invoice file hasn't been modified.
+File: https://example.com/invoice.pdf
+Known SHA-256 hash: [original hash from sender]
+```
+FakeSpotter compares the live file hash against the known-good baseline. Any tampering returns `DOCUMENT_TAMPERED`.
+
+**Step 3 — Check the sender's domain reputation:**
+```
+Use FakeSpotter to analyse the reputation of this domain: supplier-invoices.net
+```
+FakeSpotter checks DNS resolution, HTTPS validity, redirect chains, and security header posture.
+
+**Step 4 — Get a full signed Forensic Certificate:**
+
+Add `report_mode: "full"` to any tool call to receive a cryptographically signed certificate with HMAC-SHA256 integrity hash — ready for legal or compliance review.
 
 ---
 
@@ -45,7 +75,7 @@ Restart your IDE. FakeSpotter tools will appear automatically.
 | `verify_physical_currency` | $0.25 | Physical / Financial |
 | `validate_identity_doc` | $0.40 | Identity / KYC |
 | `detect_document_forgery` | $0.35 | Physical / Financial |
-| `scan_phishing_url` | $0.15 | Network Security |
+| `scan_phishing_url` | $0.30 | Network Security |
 | `check_email_headers` | $0.15 | Network Security |
 | `analyze_url_reputation` | $0.15 | Network Security |
 | `scan_blockchain_provenance` | $0.15 | Crypto / DeFi |
@@ -58,72 +88,65 @@ Restart your IDE. FakeSpotter tools will appear automatically.
 
 ---
 
-## 🛡️ The Forensic Difference: Quick vs. Full Report
+## 🛡️ Quick vs. Full Report
 
-Unlike standard scanners, FakeSpotter offers two analysis modes via the `report_mode` parameter:
+Every tool accepts a `report_mode` parameter:
 
-**`quick`** — Immediate binary verdict for fast agent decisions:
+**`quick`** — Immediate binary verdict:
 ```
 ✓ AUTHENTIC / VERIFIED (91/100) — No anomalies detected
 ```
 
-**`full`** — Cryptographically signed Forensic Certificate with evidence breakdown, ready for legal or security review:
+**`full`** — Cryptographically signed Forensic Certificate:
 ```
 ────────────────────────────────────────────────────────
   FAKESPOTTER FORENSIC CERTIFICATE  v1.0.0
 ────────────────────────────────────────────────────────
-  Tool      : detect_ai_generated_image
+  Tool      : verify_document_integrity
   Date/Time : 2025-05-25T14:32:07.412Z
   Report ID : 3f8a2c1d9e4b7f0a2d5e…
+  Signing   : PER_USER
 ────────────────────────────────────────────────────────
-  VERDICT   : LIKELY_AUTHENTIC
-  CONFIDENCE: 91/100
+  VERDICT   : DOCUMENT_INTACT
+  CONFIDENCE: 100/100
 ────────────────────────────────────────────────────────
   FORENSIC FLAGS:
   ✓  None detected
 ────────────────────────────────────────────────────────
   SHA-256 INTEGRITY:
-  3f8a2c1d9e4b7f0a2d5e8c3b1a9f6d4e2c0b8a7f5d3e1c9b7a5f3d1e9c7b5a3
+  3f8a2c1d9e4b7f0a2d5e8c3b1a9f6d4e…
   HMAC-SHA256 SIGNATURE:
-  7b2e4a9c1d8f3b6e0a5c2d7f4b1e8a3c6d9f2b5e8a1c4d7f0b3e6a9c2d5f8b1
+  7b2e4a9c1d8f3b6e0a5c2d7f4b1e8a3c…
 ────────────────────────────────────────────────────────
 ```
 
-Every full report is HMAC-SHA256 signed and timestamped, ensuring the evidence cannot be altered after analysis.
+Every full report is **HMAC-SHA256 signed with your personal key** — chain of custody stays with you, not the platform.
+
+---
+
+## 🔐 Per-User Cryptographic Signing
+
+FakeSpotter uses **per-user signing keys**. When you subscribe via MCPize, you provide your own `FAKESPOTTER_SECRET`. Your certificates are signed with your key — no shared platform key, no shared trust.
+
+Generate your key:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-Layer 1 — Forensics   Modular detection (ELA, noise analysis, copy-move,
-                      LSB steganography, EXIF fingerprinting, text statistics,
-                      blockchain API, HTTP heuristics)
+Layer 1 — Forensics   ELA, noise analysis, copy-move detection,
+                      LSB steganography, EXIF fingerprinting,
+                      text statistics, blockchain API, HTTP heuristics
 
-Layer 2 — MCP         FastMCP interface exposes 18 forensic modules as
-                      @mcp.tool() calls with Pydantic input validation
+Layer 2 — MCP         FastMCP exposes 18 forensic modules as
+                      @mcp.tool() calls with Pydantic validation
 
-Layer 3 — Integrity   Every report is HMAC-SHA256 signed and timestamped
-```
-
-```
-src/
-├── server.py              ← MCP router (registers all 18 tools)
-├── locales/
-│   ├── en.json
-│   └── es.json
-├── utils/
-│   ├── analysis.py        ← ELA, noise, copy-move, LSB, EXIF, text stats
-│   ├── media.py           ← httpx (images) + yt-dlp (video/audio)
-│   ├── reporter.py        ← HMAC-SHA256 certificate generator
-│   └── i18n.py            ← Localisation (EN/ES)
-└── tools/
-    ├── media_tools.py     ← Tools 1–5
-    ├── financial_tools.py ← Tools 6–8
-    ├── network_tools.py   ← Tools 9–11
-    ├── blockchain_tools.py← Tools 12–13
-    ├── document_tools.py  ← Tools 14–16
-    └── osint_tools.py     ← Tools 17–18
+Layer 3 — Integrity   Every report is HMAC-SHA256 signed with
+                      the user's own key and timestamped
 ```
 
 ---
@@ -136,12 +159,11 @@ src/
 git clone https://github.com/carlosalbertorussell/fakespotter-mcp
 cd fakespotter-mcp
 pip install -r requirements.txt
-cp .env.example .env   # edit FAKESPOTTER_SECRET
+cp .env.example .env   # set FAKESPOTTER_SECRET
 python src/server.py
 ```
 
-Claude Desktop config (`claude_desktop_config.json`):
-
+Claude Desktop config:
 ```json
 {
   "mcpServers": {
@@ -153,10 +175,10 @@ Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-### Docker Mode (HTTP — remote/team deployment)
+### Docker Mode (HTTP)
 
 ```bash
-cp .env.example .env   # set FAKESPOTTER_SECRET and FAKESPOTTER_TRANSPORT=streamable_http
+cp .env.example .env
 docker build -t fakespotter-mcp .
 docker run -p 8000:8000 --env-file .env fakespotter-mcp
 ```
@@ -165,15 +187,7 @@ docker run -p 8000:8000 --env-file .env fakespotter-mcp
 
 ## 🌐 Languages
 
-All tools accept a `lang` parameter: `"en"` (English) or `"es"` (Spanish).
-
----
-
-## 📋 Requirements
-
-- Python 3.11+
-- ffmpeg (for video analysis)
-- Dependencies: `fastmcp`, `httpx`, `yt-dlp`, `Pillow`, `opencv-python-headless`, `numpy`, `python-dotenv`
+All tools accept `lang`: `"en"` (English) or `"es"` (Spanish).
 
 ---
 
@@ -181,7 +195,8 @@ All tools accept a `lang` parameter: `"en"` (English) or `"es"` (Spanish).
 
 **Carlos A. Russell** | CISSP · CISM · CISA · CGEIT  
 Cybersecurity Specialist & AI Speaker  
-[github.com/carlosalbertorussell](https://github.com/carlosalbertorussell)
+[github.com/carlosalbertorussell](https://github.com/carlosalbertorussell)  
+[myothercarisarobot.com](https://myothercarisarobot.com)
 
 ---
 
