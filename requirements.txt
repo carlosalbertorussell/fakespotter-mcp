@@ -5,4 +5,4 @@ Pillow>=12.2.0
 python-dotenv>=1.2.3
 opencv-python-headless>=4.13.0.92
 numpy>=2.4.6
-uvicorn>=0.29.0
+uvicorn>=0.52.4
