@@ -47,13 +47,23 @@ mcp = FastMCP(
     host="0.0.0.0",
     port=_PORT,
     instructions=(
-        "FakeSpotter is an AI-powered forensic suite for digital evidence authentication. "
-        "It detects deepfakes, AI-generated content, counterfeit documents, phishing, "
-        "on-chain fraud, and steganography. "
-        "Every tool accepts a 'report_mode' parameter: "
-        "'quick' returns an immediate binary verdict; "
-        "'full' returns a cryptographically signed Forensic Certificate with evidence breakdown. "
-        "Supported languages: 'en' (English) and 'es' (Spanish)."
+        "FakeSpotter is a forensic suite for digital evidence authentication. "
+        "The recommended workflow is FakeSpotter Invoice Guard: a four-step "
+        "deterministic chain to verify supplier invoices before payment. "
+        "Step 1 — check_email_headers: authenticates SPF, DKIM, DMARC, "
+        "From/Return-Path mismatches, and Reply-To hijacking. "
+        "Step 2 — verify_document_integrity: compares the document's SHA-256 "
+        "hash against a known-good baseline; returns DOCUMENT_INTACT or "
+        "DOCUMENT_TAMPERED. "
+        "Step 3 — analyze_url_reputation: checks DNS resolution, HTTPS validity, "
+        "redirect chains, and security header posture of the sender's domain. "
+        "Step 4 — analyze_file_metadata: produces MD5/SHA-256/SHA-512 hashes, "
+        "detects file-type mismatches via magic bytes, and flags high entropy. "
+        "All four tools accept report_mode='full' to return a cryptographically "
+        "signed Forensic Certificate (HMAC-SHA256, per-user key). "
+        "Additional production tools cover phishing URLs, blockchain provenance, "
+        "identity documents, physical currency, OSINT, and AI-generated text. "
+        "All tools accept a 'lang' parameter: 'en' (English) or 'es' (Spanish)."
     ),
 )
 
