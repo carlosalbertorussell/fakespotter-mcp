@@ -2,11 +2,11 @@
 
 [![MCPize](https://mcpize.com/badge/@crussell/fakespotter)](https://mcpize.com/mcp/fakespotter)
 
-**AI-Powered Forensic Suite — Automated digital evidence authentication for the era of generative content.**
+**Forensic Suite for Digital Evidence Authentication — deterministic checks for financial fraud, document tampering, and phishing.**
 
 Built for AI agents, security teams, and auditors via the [Model Context Protocol](https://modelcontextprotocol.io).
 
-FakeSpotter acts as your **Digital Forensic Expert**. Whether validating the authenticity of a financial transaction, verifying identity documents, or performing deepfake analysis on media assets, FakeSpotter delivers cryptographically signed reports to prove what is real and what is synthetic.
+FakeSpotter delivers **binary, reproducible verdicts**: a hash matches or it doesn't, an SPF record validates or it doesn't, a domain resolves or it doesn't. Every result is cryptographically signed with your own key and ready for compliance review.
 
 *Built by [Carlos A. Russell](https://github.com/carlosalbertorussell) | CISSP · CISM · CISA · CGEIT*
 
@@ -27,21 +27,21 @@ Add to your IDE MCP config:
 }
 ```
 
-Restart your IDE. All 18 FakeSpotter tools appear automatically.
+Restart your IDE. All FakeSpotter tools appear automatically.
 
 > 50 free calls/month. Payments via x402 — USDC on Base.
 
 ---
 
-## 🔍 Quick Start: Real-World Example
+## ⚡ FakeSpotter Invoice Guard
 
-**Scenario:** A finance team receives an invoice via email and needs to verify it before payment.
+Verify supplier invoices before payment — a complete forensic chain in four deterministic steps, each returning a binary verdict and a cryptographically signed certificate.
 
 **Step 1 — Scan the sender's email headers for spoofing:**
 ```
 Use FakeSpotter to check these email headers for spoofing: [paste raw headers]
 ```
-FakeSpotter checks SPF, DKIM, DMARC, From/Return-Path mismatches, and Reply-To hijacking.
+Checks SPF, DKIM, DMARC, From/Return-Path mismatches, and Reply-To hijacking.
 
 **Step 2 — Verify the invoice PDF hasn't been altered:**
 ```
@@ -49,29 +49,39 @@ Use FakeSpotter to verify this invoice file hasn't been modified.
 File: https://example.com/invoice.pdf
 Known SHA-256 hash: [original hash from sender]
 ```
-FakeSpotter compares the live file hash against the known-good baseline. Any tampering returns `DOCUMENT_TAMPERED`.
+Compares the live file hash against the known-good baseline. Any tampering returns `DOCUMENT_TAMPERED`.
 
 **Step 3 — Check the sender's domain reputation:**
 ```
 Use FakeSpotter to analyse the reputation of this domain: supplier-invoices.net
 ```
-FakeSpotter checks DNS resolution, HTTPS validity, redirect chains, and security header posture.
+Checks DNS resolution, HTTPS validity, redirect chains, and security header posture.
 
-**Step 4 — Get a full signed Forensic Certificate:**
+**Step 4 — Fingerprint the attachment:**
+```
+Use FakeSpotter to analyse this file's metadata: https://example.com/invoice.pdf
+```
+Produces MD5, SHA-256, SHA-512 hashes, detects file-type mismatches, and flags high-entropy content.
+
+**Step 5 — Get a full signed Forensic Certificate:**
 
 Add `report_mode: "full"` to any tool call to receive a cryptographically signed certificate with HMAC-SHA256 integrity hash — ready for legal or compliance review.
 
+| Tool | Cost/Call | What it checks |
+|------|-----------|----------------|
+| `check_email_headers` | $0.15 | SPF, DKIM, DMARC, header spoofing |
+| `verify_document_integrity` | $0.10 | SHA-256 hash vs known-good baseline |
+| `analyze_url_reputation` | $0.15 | DNS, HTTPS, redirect chain, security headers |
+| `analyze_file_metadata` | $0.15 | Hash fingerprint, magic bytes, entropy |
+| Forensic Certificate | included | HMAC-SHA256 signed, per-user key |
+| **Full Invoice Guard run** | **$0.55** | |
+
 ---
 
-## 🧰 Forensic Toolkit — 18 Specialised Tools
+## 🧰 Production Forensic Toolkit — 13 Tools
 
 | Tool | Cost/Call | Forensic Domain |
 |------|-----------|-----------------|
-| `audit_deepfake_video` | $0.50 | Media / Synthetic Content |
-| `detect_ai_generated_image` | $0.40 | Media / Synthetic Content |
-| `analyze_audio_authenticity` | $0.35 | Media / Synthetic Content |
-| `verify_video_metadata` | $0.20 | Media / Synthetic Content |
-| `detect_steganography` | $0.25 | Media / Synthetic Content |
 | `verify_physical_currency` | $0.25 | Physical / Financial |
 | `validate_identity_doc` | $0.40 | Identity / KYC |
 | `detect_document_forgery` | $0.35 | Physical / Financial |
@@ -85,6 +95,22 @@ Add `report_mode: "full"` to any tool call to receive a cryptographically signed
 | `verify_document_integrity` | $0.10 | Document / Text |
 | `analyze_image_metadata` | $0.20 | OSINT / Identity |
 | `verify_social_profile` | $0.20 | OSINT / Identity |
+
+---
+
+## 🔬 Research Tools (not production-validated)
+
+The following tools use **Layer 1 heuristics** — Error Level Analysis (ELA), noise consistency, copy-move detection, LSB steganography analysis, and audio metadata fingerprinting. These techniques were effective against early generative models and remain useful for exploration and research.
+
+They are **not recommended for evidentiary or commercial decisions** without independent validation against your target adversary model. A competent evaluator probing them with recent generative content will find significant false-negative rates. They are included in the server and available to call; they are not part of the production offer.
+
+| Tool | Forensic Domain | Technique |
+|------|-----------------|-----------|
+| `audit_deepfake_video` | Media / Synthetic Content | Frame-level ELA + metadata |
+| `detect_ai_generated_image` | Media / Synthetic Content | ELA + noise + copy-move + EXIF |
+| `analyze_audio_authenticity` | Media / Synthetic Content | Metadata + encoding heuristics |
+| `verify_video_metadata` | Media / Synthetic Content | Container/platform metadata |
+| `detect_steganography` | Media / Synthetic Content | LSB analysis |
 
 ---
 
@@ -138,11 +164,11 @@ python -c "import secrets; print(secrets.token_hex(32))"
 ## 🏗️ Architecture
 
 ```
-Layer 1 — Forensics   ELA, noise analysis, copy-move detection,
-                      LSB steganography, EXIF fingerprinting,
-                      text statistics, blockchain API, HTTP heuristics
+Layer 1 — Forensics   Hash verification, header parsing, DNS/HTTP
+                      reputation checks, entropy and magic-byte
+                      analysis, text statistics, blockchain API
 
-Layer 2 — MCP         FastMCP exposes 18 forensic modules as
+Layer 2 — MCP         FastMCP exposes forensic modules as
                       @mcp.tool() calls with Pydantic validation
 
 Layer 3 — Integrity   Every report is HMAC-SHA256 signed with
