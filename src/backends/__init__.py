@@ -6,13 +6,15 @@ from .base import ClassifierBackend, BackendResult
 from .ensemble import EnsembleResult, run_ensemble
 from .hf_image import HFImageBackend
 from .hf_audio import HFAudioBackend
+from .hf_music import HFMusicBackend
 from .hf_text import HFTextBackend
 from .sightengine import SightengineImageBackend
+from .sightengine_audio import SightengineAudioBackend
 from .synthid import SynthIDTextBackend
 
 __all__ = [
     "ClassifierBackend", "BackendResult",
     "EnsembleResult", "run_ensemble",
-    "HFImageBackend", "HFAudioBackend", "HFTextBackend",
-    "SightengineImageBackend", "SynthIDTextBackend",
+    "HFImageBackend", "HFAudioBackend", "HFMusicBackend", "HFTextBackend",
+    "SightengineImageBackend", "SightengineAudioBackend", "SynthIDTextBackend",
 ]

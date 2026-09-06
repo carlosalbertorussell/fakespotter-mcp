@@ -420,6 +420,165 @@ def register_detect_steganography(mcp: FastMCP) -> None:
             return f"[FakeSpotter Error] {type(exc).__name__}: {exc}"
 
 
+
+# ---------------------------------------------------------------------------
+# Tool 6: detect_ai_generated_music  (Sprint 7 — AI music ensemble)
+# ---------------------------------------------------------------------------
+
+# Snippet to append to media_tools.py — new Tool 6: detect_ai_generated_music
+
+class DetectAIMusicInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    media_url:  str = Field(
+        ...,
+        description=(
+            "Public URL of the audio file to analyse. "
+            "Supported formats: MP3, WAV, FLAC, OGG/Opus (WhatsApp/Telegram), "
+            "M4A/AAC (iOS), WebM, AMR, 3GP. "
+            "Files are converted to WAV 16kHz mono before analysis."
+        ),
+    )
+    hf_token:   str = Field("", description="HuggingFace token (free at hf.co/settings/tokens)")
+    se_user:    str = Field("", description="Sightengine API user (optional, free tier available)")
+    se_secret:  str = Field("", description="Sightengine API secret (optional)")
+    lang:        Literal["en", "es"] = Field("en")
+    report_mode: Literal["quick", "full"] = Field("quick")
+
+
+def register_detect_ai_generated_music(mcp: FastMCP) -> None:
+
+    @mcp.tool(
+        name="detect_ai_generated_music",
+        annotations={
+            "title": "AI-Generated Music Detector",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def detect_ai_generated_music(params: DetectAIMusicInput) -> str:
+        """
+        Detects AI-generated music (Suno, Udio, MusicGen, Riffusion, etc.)
+        via a neural ensemble.
+
+        IMPORTANT: This tool detects AI-GENERATED MUSIC, not voice deepfakes.
+        For synthetic/cloned voice detection, use analyze_audio_authenticity.
+
+        Neural backends (BYOK, all free-tier available):
+        - HF: AI-Music-Detection/ai_music_detection_large_60s (0.1B params,
+          trained specifically on AI music generators)
+        - Sightengine: ai-music model (BETA) — returns generator attribution
+          (Suno, Udio, Riffusion, MusicGen, etc.) when detected
+
+        Supported input formats:
+          MP3, WAV, FLAC — native
+          OGG/Opus       — WhatsApp, Telegram audio
+          M4A/AAC        — iOS, Android voice/music
+          WebM/Opus      — web recordings
+          AMR, 3GP       — legacy mobile
+
+        KNOWN LIMITATIONS (surfaced in certificate):
+        - Accuracy drops on vocal-heavy tracks; best on instrumentals.
+        - Heavily compressed/re-encoded files (low-bitrate MP3) may lose
+          the spectral artifacts the models look for.
+        - Models track known generators; novel or obscure tools may be missed.
+        - A high score is strong evidence; a low score is not proof of human origin.
+
+        Returns Layer-1 heuristic result with explicit disclaimer
+        if no backend keys are provided.
+        """
+        try:
+            from utils.audio import download_audio_direct, to_wav_16k_mono, detect_mime
+            flags: list[str] = []
+
+            # Download audio
+            try:
+                audio_bytes, detected_mime = await download_audio_direct(params.media_url)
+            except Exception as e:
+                # Fallback: try yt-dlp path for platform URLs (YouTube, SoundCloud, etc.)
+                tmp_path = None
+                try:
+                    tmp_path, _ = download_video(params.media_url)
+                    audio_bytes = tmp_path.read_bytes()
+                    detected_mime = detect_mime(audio_bytes, str(tmp_path))
+                except Exception as e2:
+                    return f"[FakeSpotter Error] Could not download audio: {e} / {e2}"
+                finally:
+                    cleanup_file(tmp_path)
+
+            # Convert to WAV 16kHz mono
+            try:
+                wav_bytes, format_label = to_wav_16k_mono(audio_bytes, detected_mime)
+                flags.append(f"Input format: {format_label}")
+            except RuntimeError as e:
+                return f"[FakeSpotter Error] Audio conversion failed: {e}"
+
+            # Build ensemble
+            backends = []
+            if params.hf_token:
+                from backends import HFMusicBackend
+                backends.append(HFMusicBackend(params.hf_token))
+            if params.se_user and params.se_secret:
+                from backends import SightengineAudioBackend
+                backends.append(SightengineAudioBackend(params.se_user, params.se_secret))
+
+            if backends:
+                result = await run_ensemble(backends, wav_bytes, "audio/wav")
+                score  = int(result.score * 100)
+                verdict = result.verdict
+
+                if result.attribution:
+                    flags.append(f"Likely generator: {result.attribution}")
+                if result.backends_failed:
+                    flags.append(f"Unavailable backends: {', '.join(result.backends_failed)}")
+                flags += [
+                    "MUSIC_LIMITATION: accuracy lower on vocal-heavy tracks",
+                    "MUSIC_LIMITATION: compressed/re-encoded files may lose detection artifacts",
+                ]
+                findings = {
+                    "verdict": verdict,
+                    "trust_score": 100 - score,
+                    "detection_engine": "neural_ensemble_music",
+                    **result.to_findings(),
+                    "forensic_flags": flags,
+                }
+            else:
+                # No backends — Layer-1 heuristic fallback for music
+                import math as _math
+                score = 0
+                byte_counts = [0] * 256
+                for b in wav_bytes:
+                    byte_counts[b] += 1
+                n = len(wav_bytes)
+                entropy = -sum((c/n) * _math.log2(c/n) for c in byte_counts if c > 0)
+                # AI music from neural codecs tends to have very uniform entropy
+                if 7.2 < entropy < 7.6:
+                    score += 20
+                    flags.append(f"Entropy profile consistent with neural codec ({entropy:.2f}/8.0)")
+                flags.append(
+                    "LAYER_1_FALLBACK: no neural backend keys provided — "
+                    "provide hf_token and/or se_user+se_secret for reliable music detection"
+                )
+                verdict = "UNCERTAIN" if score >= 20 else "LIKELY_AUTHENTIC"
+                findings = {
+                    "verdict": verdict,
+                    "trust_score": 100 - score,
+                    "detection_engine": "layer1_entropy_fallback",
+                    "audio_entropy": round(entropy, 3),
+                    "forensic_flags": flags,
+                }
+
+            if params.report_mode == "quick":
+                return _build_quick(verdict, 100 - score, flags, params.lang)
+            report = ForensicReporter.generate_report("detect_ai_generated_music", findings, params.lang)
+            return ForensicReporter.format_certificate(report, findings)
+
+        except Exception as exc:
+            return f"[FakeSpotter Error] {type(exc).__name__}: {exc}"
+
+
 # ---------------------------------------------------------------------------
 # Registration entry point
 # ---------------------------------------------------------------------------
@@ -430,3 +589,4 @@ def register_all(mcp: FastMCP) -> None:
     register_analyze_audio_authenticity(mcp)
     register_verify_video_metadata(mcp)
     register_detect_steganography(mcp)
+    register_detect_ai_generated_music(mcp)
