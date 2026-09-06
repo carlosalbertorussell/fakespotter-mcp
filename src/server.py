@@ -78,7 +78,7 @@ _blockchain.register_all(mcp)   # Tools 12–13 : Blockchain / DeFi
 _document.register_all(mcp)     # Tools 14–16 : Documents / Text
 _osint.register_all(mcp)        # Tools 17–18 : OSINT / Identity
 
-logger.info("FakeSpotter MCP server initialised — 18 forensic tools registered.")
+logger.info("FakeSpotter MCP server initialised — 19 forensic tools registered.")
 
 
 # ---------------------------------------------------------------------------
