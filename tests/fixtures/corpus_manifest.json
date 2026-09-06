@@ -1,0 +1,121 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "created": "2026-09-06",
+    "description": "FakeSpotter classifier health corpus. URLs point to versioned HuggingFace dataset samples. Update SHA-256 hashes after any corpus refresh.",
+    "refresh_cadence": "every 6 months or when a major new generator is released",
+    "contact": "open a GitHub issue to propose new samples"
+  },
+  "image": {
+    "ai_generated": [
+      {
+        "id": "img_ai_01",
+        "url": "https://huggingface.co/datasets/birdy654/cifake-real-and-ai-generated-synthetic-images/resolve/main/test/FAKE/0.jpg",
+        "generator": "stable_diffusion_v1",
+        "expected_label": "ai_generated",
+        "sha256": null,
+        "notes": "CIFAKE dataset — Stable Diffusion v1 generated"
+      },
+      {
+        "id": "img_ai_02",
+        "url": "https://huggingface.co/datasets/birdy654/cifake-real-and-ai-generated-synthetic-images/resolve/main/test/FAKE/1.jpg",
+        "generator": "stable_diffusion_v1",
+        "expected_label": "ai_generated",
+        "sha256": null
+      },
+      {
+        "id": "img_ai_03",
+        "url": "https://huggingface.co/datasets/birdy654/cifake-real-and-ai-generated-synthetic-images/resolve/main/test/FAKE/2.jpg",
+        "generator": "stable_diffusion_v1",
+        "expected_label": "ai_generated",
+        "sha256": null
+      }
+    ],
+    "human": [
+      {
+        "id": "img_human_01",
+        "url": "https://huggingface.co/datasets/birdy654/cifake-real-and-ai-generated-synthetic-images/resolve/main/test/REAL/0.jpg",
+        "expected_label": "human",
+        "sha256": null,
+        "notes": "CIFAKE dataset — CIFAR-10 real photograph"
+      },
+      {
+        "id": "img_human_02",
+        "url": "https://huggingface.co/datasets/birdy654/cifake-real-and-ai-generated-synthetic-images/resolve/main/test/REAL/1.jpg",
+        "expected_label": "human",
+        "sha256": null
+      },
+      {
+        "id": "img_human_03",
+        "url": "https://huggingface.co/datasets/birdy654/cifake-real-and-ai-generated-synthetic-images/resolve/main/test/REAL/2.jpg",
+        "expected_label": "human",
+        "sha256": null
+      }
+    ]
+  },
+  "audio_speech": {
+    "ai_generated": [
+      {
+        "id": "spch_ai_01",
+        "url": "https://huggingface.co/datasets/mueller91/MLAAD-tiny/resolve/main/audio/tts_0001.wav",
+        "generator": "tts_unknown",
+        "expected_label": "ai_generated",
+        "sha256": null,
+        "notes": "MLAAD-tiny — Multi-Language Audio Anti-Spoofing Dataset"
+      },
+      {
+        "id": "spch_ai_02",
+        "url": "https://huggingface.co/datasets/mueller91/MLAAD-tiny/resolve/main/audio/tts_0002.wav",
+        "generator": "tts_unknown",
+        "expected_label": "ai_generated",
+        "sha256": null
+      }
+    ],
+    "human": [
+      {
+        "id": "spch_human_01",
+        "url": "https://huggingface.co/datasets/mozilla-foundation/common_voice_11_0/resolve/main/audio/en/test/common_voice_en_100038.wav",
+        "expected_label": "human",
+        "sha256": null,
+        "notes": "Mozilla Common Voice 11 — human speaker"
+      },
+      {
+        "id": "spch_human_02",
+        "url": "https://huggingface.co/datasets/mozilla-foundation/common_voice_11_0/resolve/main/audio/en/test/common_voice_en_100039.wav",
+        "expected_label": "human",
+        "sha256": null
+      }
+    ]
+  },
+  "text": {
+    "ai_generated": [
+      {
+        "id": "txt_ai_01",
+        "content": "The implementation of artificial intelligence in modern healthcare systems represents a paradigm shift in diagnostic capabilities. Machine learning algorithms have demonstrated remarkable precision in identifying pathological patterns that may elude human observation. Furthermore, the integration of natural language processing enables seamless communication between clinical staff and automated systems.",
+        "generator": "gpt_family",
+        "expected_label": "ai_generated",
+        "notes": "Representative GPT-style text — uniform paragraph length, high filler density"
+      },
+      {
+        "id": "txt_ai_02",
+        "content": "In conclusion, the aforementioned factors contribute significantly to the overall understanding of the subject matter. It is important to note that while these considerations are relevant, they should be evaluated within the broader context of the field. Additionally, further research is warranted to explore the nuanced implications of these findings.",
+        "generator": "gpt_family",
+        "expected_label": "ai_generated"
+      }
+    ],
+    "human": [
+      {
+        "id": "txt_human_01",
+        "content": "I've been thinking about this for a while now — my dad used to say the mill would outlast us all. Turns out he was wrong, but only just. The closure notice came on a Tuesday, same day my sister called about her cat.",
+        "expected_label": "human",
+        "notes": "Human writing — irregular sentence length, personal voice, non-sequitur"
+      },
+      {
+        "id": "txt_human_02",
+        "content": "ok so this is a bit embarrassing but i completely forgot to submit the PR before the deadline. the tests were passing locally! idk what happened. should i just open it now and explain or wait until monday?",
+        "expected_label": "human",
+        "notes": "Human writing — informal, typos, casual register"
+      }
+    ]
+  }
+}
