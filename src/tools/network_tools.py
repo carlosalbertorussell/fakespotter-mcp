@@ -517,7 +517,7 @@ def register_analyze_url_reputation(mcp: FastMCP) -> None:
             score = min(100, score)
             verdict = (
                 "POOR_REPUTATION"    if score >= 50
-                else "MODERATE_RISK" if score >= 25
+                else "MODERATE_RISK" if score >= 35
                 else "GOOD_REPUTATION"
             )
 
