@@ -1,0 +1,49 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "established": "2026-09-06",
+    "description": "Published accuracy baselines for each FakeSpotter backend. Update after each corpus refresh. A backend is flagged DEGRADED if its current accuracy falls more than DEGRADATION_THRESHOLD points below its baseline.",
+    "degradation_threshold_points": 10
+  },
+  "baselines": {
+    "hf_image_ensemble": {
+      "accuracy_pct": 94.0,
+      "source": "prithivMLmods/deepfake-detector-model-v1 published classification report (F1=0.944)",
+      "corpus_version": "cifake-1.0",
+      "established": "2026-09-06"
+    },
+    "sightengine_image": {
+      "accuracy_pct": 96.5,
+      "source": "aisongchecker.pro independent benchmark 2026",
+      "corpus_version": "internal-sightengine-2026",
+      "established": "2026-09-06"
+    },
+    "hf_audio_ensemble": {
+      "accuracy_pct": 88.0,
+      "source": "koyelog/deepfake-voice-detector-sota README (ASVspoof 2021 test set)",
+      "corpus_version": "mlaad-tiny-1.0",
+      "established": "2026-09-06",
+      "caveats": "Trained on ASVspoof 2021; post-2024 TTS systems not in training data"
+    },
+    "hf_music": {
+      "accuracy_pct": 91.0,
+      "source": "AI-Music-Detection/ai_music_detection_large_60s model card",
+      "corpus_version": "internal-music-2026",
+      "established": "2026-09-06",
+      "caveats": "Lower on vocal-heavy tracks; best on instrumentals"
+    },
+    "sightengine_audio": {
+      "accuracy_pct": 96.5,
+      "source": "aisongchecker.pro independent benchmark 2026 (Sightengine ai-music)",
+      "corpus_version": "internal-sightengine-audio-2026",
+      "established": "2026-09-06"
+    },
+    "hf_text_ensemble": {
+      "accuracy_pct": 72.0,
+      "source": "Estimated from Hello-SimpleAI/chatgpt-detector-roberta published benchmarks (pre-2024 data); real-world accuracy lower on newer LLMs",
+      "corpus_version": "synthetic-text-1.0",
+      "established": "2026-09-06",
+      "caveats": "Known degradation on post-GPT-3.5 models. Baseline intentionally conservative."
+    }
+  }
+}
