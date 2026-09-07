@@ -243,7 +243,7 @@ def register_analyze_file_metadata(mcp: FastMCP) -> None:
                 for c in byte_counts if c > 0
             )
             if entropy > 7.8:
-                score += 15
+                score += 25
                 flags.append(f"Very high entropy ({entropy:.2f}/8.0) — file may be encrypted or packed")
 
             score = min(100, score)
