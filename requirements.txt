@@ -1,7 +1,7 @@
 # Topes superiores obligatorios: sin ellos un `pip install` limpio salta de major
 # y el arranque muere en tiempo de import. Ver el incidente del 05/09 (deploy
 # mcp-fakespotter-00021: startup probe fallado por `mcp` 2.x).
-mcp>=1.29.1,<2
+mcp>=2.1.1,<3
 httpx>=0.28.1,<1
 yt-dlp>=2026.8.19,<2027
 Pillow>=12.2.0,<13
