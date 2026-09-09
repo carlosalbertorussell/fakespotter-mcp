@@ -15,3 +15,4 @@ pydantic>=2.11,<3
 pymupdf>=1.24,<2
 pyhanko>=0.20,<1
 cryptography>=42,<44
+passporteye>=2.2,<3
