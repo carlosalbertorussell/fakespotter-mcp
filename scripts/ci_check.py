@@ -1,6 +1,6 @@
 """Chequeo de arranque para CI.
 Falla con exit 1 si mcp resolvio a 2.x, si el import se rompe, o si no se
-registran las 23 tools esperadas. Es lo minimo que habria frenado el PR #39
+registran las 24 tools esperadas. Es lo minimo que habria frenado el PR #39
 antes de llegar al build.
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ import importlib.metadata as metadata
 import os
 import sys
 from pathlib import Path
-EXPECTED_TOOLS = 23
+EXPECTED_TOOLS = 24
 _ROOT = Path(__file__).resolve().parent.parent
 os.environ.setdefault("FAKESPOTTER_TRANSPORT", "stdio")
 os.environ.setdefault("FAKESPOTTER_TMP", "/tmp/fakespotter")

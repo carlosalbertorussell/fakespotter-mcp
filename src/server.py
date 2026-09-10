@@ -1,6 +1,6 @@
 """
 FakeSpotter MCP Server
-AI-Powered Forensic Suite — 23 Forensic Tools
+AI-Powered Forensic Suite — 24 Forensic Tools
 Built by Carlos A. Russell | CISSP · CISM · CISA · CGEIT
 """
 from __future__ import annotations
@@ -29,6 +29,7 @@ import tools.qr_tools          as _qr
 import tools.signature_tools   as _sig
 import tools.bank_tools        as _bank
 import tools.mrz_tools         as _mrz
+import tools.pdf_meta_tools    as _pdfmeta
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -72,7 +73,7 @@ mcp = FastMCP(
 )
 
 # ---------------------------------------------------------------------------
-# Register all 23 tools
+# Register all 24 tools
 # ---------------------------------------------------------------------------
 
 _media.register_all(mcp)        # Tools  1–5  : Media / Synthetic Content
@@ -85,8 +86,9 @@ _qr.register_all(mcp)           # Tool  19–20 : QR / Document
 _sig.register_all(mcp)          # Tool  21    : Digital Signatures
 _bank.register_all(mcp)         # Tool  22    : Bank Account Validation
 _mrz.register_all(mcp)          # Tool  23    : MRZ Validation
+_pdfmeta.register_all(mcp)      # Tool  24    : PDF Metadata Forensics
 
-logger.info("FakeSpotter MCP server initialised — 23 forensic tools registered.")
+logger.info("FakeSpotter MCP server initialised — 24 forensic tools registered.")
 
 
 # ---------------------------------------------------------------------------
