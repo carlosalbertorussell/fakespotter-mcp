@@ -17,3 +17,4 @@ pyhanko>=0.20,<1
 cryptography>=42,<44
 passporteye>=2.2,<3
 c2pa-python>=0.7,<1
+imagehash>=4.3,<5
