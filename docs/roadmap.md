@@ -20,7 +20,7 @@
 
 ---
 
-## Roadmap activo (S11–S19)
+## Roadmap S11–S19 — COMPLETADO ✅
 
 ### S11 — `inspect_qr_code` · tool #20
 
@@ -205,5 +205,5 @@ Dado un conjunto de documentos, detecta reutilización de imágenes entre archiv
 | 26 | `validate_identity_liveness` | Neural BYOK | S18 |
 | 27 | `correlate_documents` | Determinista | S19 |
 
-**Total al completar S19: 27 tools**
+**Total: 27 tools — arco S11–S19 cerrado** ✅
 
