@@ -35,6 +35,86 @@ BRAND_IMPERSONATION = [
 
 HTTP_TIMEOUT = 15
 
+# ---------------------------------------------------------------------------
+# S17: Typosquatting detection helpers (Levenshtein + homograph)
+# ---------------------------------------------------------------------------
+
+_KNOWN_DOMAINS: list[str] = [
+    "paypal.com","amazon.com","amazon.co.uk","amazon.de","amazon.com.br",
+    "google.com","apple.com","microsoft.com","facebook.com","instagram.com",
+    "netflix.com","whatsapp.com","twitter.com","x.com","linkedin.com",
+    "spotify.com","youtube.com","dropbox.com","icloud.com","outlook.com",
+    "gmail.com","yahoo.com","chase.com","wellsfargo.com","bankofamerica.com",
+    "citibank.com","hsbc.com","barclays.co.uk","santander.com","bbva.com",
+    "binance.com","coinbase.com","kraken.com","metamask.io","opensea.io",
+    "crypto.com","mercadopago.com","mercadolibre.com","nubank.com.br",
+    "github.com","gitlab.com","slack.com","zoom.us","stripe.com","wise.com",
+    "dhl.com","fedex.com","ups.com","shopify.com","salesforce.com",
+]
+
+_CONFUSABLES: dict[str, str] = {
+    "а":"a","е":"e","о":"o","р":"p","с":"c","у":"y","х":"x","і":"i",
+    "α":"a","β":"b","ε":"e","ι":"i","κ":"k","ν":"n","ο":"o","ρ":"p",
+    "τ":"t","υ":"y","χ":"x","η":"n",
+    "ạ":"a","ä":"a","à":"a","á":"a","â":"a","ã":"a","å":"a",
+    "ė":"e","é":"e","ê":"e","ë":"e","è":"e",
+    "ï":"i","í":"i","î":"i","ì":"i",
+    "ö":"o","ó":"o","ô":"o","ò":"o","ø":"o",
+    "ü":"u","ú":"u","û":"u","ù":"u",
+}
+
+
+def _levenshtein(a: str, b: str) -> int:
+    if a == b: return 0
+    if not a: return len(b)
+    if not b: return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            curr[j] = min(prev[j]+1, curr[j-1]+1, prev[j-1]+(0 if ca==cb else 1))
+        prev = curr
+    return prev[len(b)]
+
+
+def _check_typosquatting(domain: str) -> list[tuple[int, str]]:
+    findings: list[tuple[int, str]] = []
+    apex = domain.lstrip("www.").split(":")[0]
+
+    # Homograph: normalize confusable chars and compare
+    normalized = "".join(_CONFUSABLES.get(c, c) for c in apex)
+    if normalized != apex:
+        for known in _KNOWN_DOMAINS:
+            if normalized == "".join(_CONFUSABLES.get(c, c) for c in known):
+                findings.append((40, f"Homograph attack: '{apex}' mimics '{known}' via Unicode substitution"))
+                return findings
+
+    # Levenshtein vs whitelist
+    for known in _KNOWN_DOMAINS:
+        if apex == known:
+            return []
+        known_sld = known.split(".")[0]
+        apex_sld  = apex.split(".")[0]
+        dist = _levenshtein(apex_sld, known_sld)
+        if dist == 1:
+            findings.append((35, f"Typosquatting (edit distance 1): '{apex_sld}' vs '{known_sld}' ({known})"))
+            return findings
+        if dist == 2 and len(apex_sld) > 5:
+            findings.append((20, f"Possible typosquatting (edit distance 2): '{apex_sld}' vs '{known_sld}'"))
+            return findings
+
+    # IDN punycode
+    if apex.startswith("xn--"):
+        try:
+            decoded = apex.encode("ascii").decode("idna")
+            findings.append((25, f"IDN punycode '{apex}' decodes to '{decoded}' — verify for homograph attack"))
+        except Exception:
+            findings.append((25, f"IDN punycode '{apex}' — verify visually"))
+
+    return findings
+
+
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -77,15 +157,16 @@ def register_scan_phishing_url(mcp: FastMCP) -> None:
     )
     async def scan_phishing_url(params: ScanPhishingURLInput) -> str:
         """
-        Multi-layer phishing URL analysis combining structural heuristics and live HTTP checks.
+        Multi-layer phishing URL analysis: structural heuristics + typosquatting + live HTTP checks.
 
-        Heuristic checks:
-        - URL length and entropy (long/random URLs are suspicious)
-        - Brand impersonation in subdomain or path (paypal-secure.tk)
-        - Suspicious TLD usage
-        - IP address instead of domain name
-        - Excessive subdomains (>3 levels)
-        - Lookalike characters (0 vs o, 1 vs l)
+        Structural heuristics:
+        - URL length, suspicious TLD, IP address, brand impersonation, subdomain depth
+
+        Typosquatting detection (S17 — no external deps):
+        - Homograph: Unicode confusables (Cyrillic/Greek) mimicking ASCII → +40 pts
+        - Levenshtein distance = 1 vs 50 known domains → +35 pts
+        - Levenshtein distance = 2 (long domains) → +20 pts
+        - IDN punycode (xn--) flagged for visual verification → +25 pts
 
         Live HTTP checks (if reachable):
         - HTTPS enforcement
@@ -157,13 +238,10 @@ def register_scan_phishing_url(mcp: FastMCP) -> None:
                 score += 10
                 flags.append("Non-HTTPS URL — no transport encryption")
 
-            # Lookalike characters (homograph)
-            lookalike_map = {"0": "o", "1": "l", "rn": "m", "vv": "w"}
-            for fake, real in lookalike_map.items():
-                if fake in domain and real in domain:
-                    score += 20
-                    flags.append(f"Possible homograph attack: '{fake}' → '{real}'")
-                    break
+            # Typosquatting: Levenshtein + homograph detection (S17)
+            for pts, msg in _check_typosquatting(domain):
+                score += pts
+                flags.append(msg)
 
             # --- Live HTTP check ---
             redirect_chain: list[str] = []
