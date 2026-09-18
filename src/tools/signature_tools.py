@@ -95,7 +95,13 @@ def _verify_signatures(pdf_bytes: bytes) -> list[dict]:
 
             result["integrity_ok"]     = bool(status.intact)
             result["cert_chain_ok"]    = bool(status.valid)
-            result["covers_whole_doc"] = bool(status.coverage.covers_whole_doc) if hasattr(status, 'coverage') else False
+            result["covers_whole_doc"] = (
+                status.coverage in (
+                    SignatureCoverageLevel.ENTIRE_FILE,
+                    SignatureCoverageLevel.ENTIRE_REVISION,
+                )
+                if status.coverage is not None else False
+            )
 
             # Signing time
             if hasattr(status, 'signer_reported_dt') and status.signer_reported_dt:
