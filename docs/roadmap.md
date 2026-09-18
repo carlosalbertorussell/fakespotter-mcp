@@ -207,3 +207,37 @@ Dado un conjunto de documentos, detecta reutilización de imágenes entre archiv
 
 **Total: 27 tools — arco S11–S19 cerrado** ✅
 
+
+---
+
+## Arco S20–S22
+
+### S20 — `verify_rfc3161_timestamp` · tool #28
+
+Verifica tokens RFC 3161 emitidos por una TSA (Timestamp Authority). Usa `pyhanko` (ya en requirements). Complementa `verify_digital_signature` con timestamps cualificados independientes del firmante.
+
+Input: `pdf_url` (extrae TSTs embebidos), `tsr_url` (archivo .tsr), `tsr_hex` (token inline).
+Verdicts: `TIMESTAMP_VALID` · `TIMESTAMP_INVALID` · `TIMESTAMP_EXPIRED` · `NO_TIMESTAMP_FOUND`
+**Sin dependencias nuevas.**
+
+---
+
+### S21 — `analyze_email_thread` · tool #29
+
+Detecta manipulación de hilos de email (vector BEC). Sin dependencias externas — stdlib puro.
+
+Señales: thread insertion (un mensaje referencia un Message-ID con fecha posterior — físicamente imposible), Reply-To hijacking, Date vs Received gap >48h, Message-ID duplicados, referencias a IDs desconocidos, sujeto inconsistente, remitentes nuevos mid-thread.
+Verdicts: `THREAD_INTACT` · `THREAD_SUSPICIOUS` · `THREAD_MANIPULATED`
+**Sin dependencias nuevas.**
+
+---
+
+### S22 — Docs sprint
+
+Actualiza README (29 tools, tabla completa de toolkit determinista con S11–S21), roadmap con S20–S22, sección Declared Limits. No agrega tools.
+
+---
+
+## Estado final al cierre de S22
+
+**29 tools · 22 sprints**

@@ -94,7 +94,7 @@ Five tools backed by neural ensemble classifiers (HuggingFace + Sightengine). Al
 
 ---
 
-## 🧰 Deterministic Forensic Toolkit — 12 Tools
+## 🧰 Deterministic Forensic Toolkit — 14 Tools
 
 Results are binary and reproducible. A hash matches or it doesn't; an SPF record validates or it doesn't.
 
@@ -112,6 +112,16 @@ Results are binary and reproducible. A hash matches or it doesn't; an SPF record
 | `verify_document_integrity` | $0.10 | Document / Text |
 | `analyze_image_metadata` | $0.20 | OSINT / Identity |
 | `verify_social_profile` | $0.20 | OSINT / Identity |
+| `inspect_qr_code` | $0.15 | Document / QR |
+| `verify_digital_signature` | $0.20 | Document / Signing |
+| `validate_bank_account` | $0.10 | Financial / Identity |
+| `validate_mrz` | $0.20 | Identity / KYC |
+| `analyze_pdf_metadata` | $0.15 | Document / Forensics |
+| `verify_c2pa_manifest` | $0.20 | Media / Provenance |
+| `validate_identity_liveness` | $0.30 | Identity / KYC |
+| `correlate_documents` | $0.25 | Document / Forensics |
+| `verify_rfc3161_timestamp` | $0.15 | Document / Trust |
+| `analyze_email_thread` | $0.15 | Network / BEC |
 
 ---
 
