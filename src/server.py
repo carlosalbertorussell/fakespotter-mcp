@@ -1,6 +1,6 @@
 """
 FakeSpotter MCP Server
-AI-Powered Forensic Suite — 27 Forensic Tools
+AI-Powered Forensic Suite — 28 Forensic Tools
 Built by Carlos A. Russell | CISSP · CISM · CISA · CGEIT
 """
 from __future__ import annotations
@@ -27,6 +27,7 @@ import tools.document_tools    as _document
 import tools.osint_tools       as _osint
 import tools.qr_tools          as _qr
 import tools.signature_tools   as _sig
+import tools.timestamp_tools   as _ts
 import tools.bank_tools        as _bank
 import tools.mrz_tools         as _mrz
 import tools.pdf_meta_tools    as _pdfmeta
@@ -76,7 +77,7 @@ mcp = FastMCP(
 )
 
 # ---------------------------------------------------------------------------
-# Register all 27 tools
+# Register all 28 tools
 # ---------------------------------------------------------------------------
 
 _media.register_all(mcp)        # Tools  1–5  : Media / Synthetic Content
@@ -87,6 +88,7 @@ _document.register_all(mcp)     # Tools 14–16 : Documents / Text
 _osint.register_all(mcp)        # Tools 17–18 : OSINT / Identity
 _qr.register_all(mcp)           # Tool  19–20 : QR / Document
 _sig.register_all(mcp)          # Tool  21    : Digital Signatures
+_ts.register_all(mcp)           # Tool  28    : RFC 3161 Timestamps
 _bank.register_all(mcp)         # Tool  22    : Bank Account Validation
 _mrz.register_all(mcp)          # Tool  23    : MRZ Validation
 _pdfmeta.register_all(mcp)      # Tool  24    : PDF Metadata Forensics
@@ -94,7 +96,7 @@ _c2pa.register_all(mcp)         # Tool  25    : C2PA / Content Credentials
 _liveness.register_all(mcp)     # Tool  26    : Identity Liveness + Face Match
 _corr.register_all(mcp)         # Tool  27    : Cross-Document Correlation
 
-logger.info("FakeSpotter MCP server initialised — 27 forensic tools registered.")
+logger.info("FakeSpotter MCP server initialised — 28 forensic tools registered.")
 
 
 # ---------------------------------------------------------------------------
