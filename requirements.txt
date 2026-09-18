@@ -12,9 +12,9 @@ uvicorn>=0.52.4,<1
 # Dependencia directa: la importan los 6 modulos de src/tools/.
 # Hoy funciona solo porque `mcp` la arrastra; si eso cambia, rompe sin aviso.
 pydantic>=2.13.5,<3
-pymupdf>=1.24,<2
+pymupdf>=1.28.2,<2
 pyhanko>=0.20,<1
 cryptography>=50.0.1,<51
-passporteye>=2.2,<3
-c2pa-python>=0.7,<1
+passporteye>=2.2.2,<3
+c2pa-python>=0.37.10,<1
 imagehash>=4.3.2,<5
