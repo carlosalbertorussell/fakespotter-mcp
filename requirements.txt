@@ -13,7 +13,7 @@ uvicorn>=0.52.4,<1
 # Hoy funciona solo porque `mcp` la arrastra; si eso cambia, rompe sin aviso.
 pydantic>=2.13.5,<3
 pymupdf>=1.28.2,<2
-pyhanko>=0.20,<1
+pyhanko>=0.37.0,<1
 cryptography>=50.0.1,<51
 passporteye>=2.2.2,<3
 c2pa-python>=0.37.10,<1
