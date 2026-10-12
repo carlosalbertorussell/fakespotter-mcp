@@ -1,6 +1,6 @@
 # FakeSpotter — Roadmap
 
-*Última actualización: 2026-09-06*
+*Última actualización: 2026-10-12*
 
 ## Arco completado (S1–S10)
 
@@ -241,3 +241,33 @@ Actualiza README (29 tools, tabla completa de toolkit determinista con S11–S21
 ## Estado final al cierre de S22
 
 **29 tools · 22 sprints**
+
+---
+
+## Arco S20–S23 (ejecutado) ✅
+
+> Los sprints S20–S22 planificados arriba fueron completados en arcos anteriores.
+> Los sprints efectivamente ejecutados bajo estos números fueron:
+
+| Sprint | PR | Descripción |
+|--------|----|-------------|
+| S20 | #77 | Dependabot: 3 PRs de seguridad mergeados; CI verde en Python 3.13 + 3.14 |
+| S21 | #79 | CI matrix 3.11+3.12 → 3.13+3.14; requirements.txt: `mcp>=1.29.1,<2` + `pillow` + `httpx`; `EXPECTED_TOOLS` 27→29 |
+| S22 | #80 | `ci_check.py`: captura stdout del servidor; detecta `ImportError` antes de contar tools; `EXPECTED_TOOLS=29` validado |
+| S23 | #82 | Cierra brecha README vs realidad — `HFAudioBackend` wired en `analyze_audio_authenticity`; `HFTextBackend` wired en `detect_ai_generated_text`; `hf_token` añadido a ambos inputs; fallback `LAYER_1_FALLBACK` explícito; `scripts/regression_test.py` (19 tests); paso de regresión añadido a CI |
+
+**Estado al cierre de S23:** 29 tools · 5/5 neural-ensemble tools realmente cableadas · CI: arranque + inventario + regresión
+
+---
+
+## Arco S24 (en curso)
+
+### S24 — Docs sync + pre-merge gate
+
+Elimina divergencia entre roadmap/README y el estado real del repo. Implementa validación automática pre-merge.
+
+**Cambios:**
+- README: 19→29 tools; arquitectura actualizada; marcas "Fix pending" → resueltas en S10
+- `roadmap.md`: arco S20–S23 ejecutado documentado
+- `scripts/check_docs_sync.py`: valida que `EXPECTED_TOOLS` en `ci_check.py` coincide con el conteo declarado en README
+- `.github/workflows/ci.yml`: paso `check_docs_sync` como gate obligatorio pre-merge
