@@ -15,6 +15,8 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field, ConfigDict
 
+from backends import HFTextBackend
+from backends.ensemble import run_ensemble
 from utils.analysis import analyze_text_authenticity, calculate_hashes
 from utils.i18n import i18n
 from utils.reporter import ForensicReporter
@@ -47,6 +49,16 @@ class DetectAITextInput(BaseModel):
         min_length=50,
         max_length=50_000,
     )
+    hf_token: str = Field(
+        "",
+        description=(
+            "HuggingFace token (optional). Enables neural ensemble: "
+            "Hello-SimpleAI/chatgpt-detector-roberta (weight 0.6) + "
+            "openai-community/roberta-base-openai-detector (weight 0.4). "
+            "Without this, statistical heuristics are used (burstiness, TTR, filler density). "
+            "Free tokens: https://huggingface.co/settings/tokens"
+        ),
+    )
     lang: Literal["en", "es"] = Field("en")
     report_mode: Literal["quick", "full"] = Field("quick")
 
@@ -65,20 +77,24 @@ def register_detect_ai_generated_text(mcp: FastMCP) -> None:
     )
     async def detect_ai_generated_text(params: DetectAITextInput) -> str:
         """
-        Heuristic analysis to detect AI-generated text (GPT, Claude, Gemini, etc.).
+        Detects AI-generated text (GPT, Claude, Gemini, etc.) via neural ensemble
+        when a HuggingFace token is provided, or statistical heuristics otherwise.
 
-        Statistical signals used:
+        Neural path (hf_token provided):
+        - Hello-SimpleAI/chatgpt-detector-roberta (weight 0.6)
+        - openai-community/roberta-base-openai-detector (weight 0.4)
+        - detection_engine: "neural_ensemble"
+
+        Statistical fallback (no hf_token):
         - Burstiness (σ/μ of sentence lengths): human writing is more variable
         - Type-Token Ratio (vocabulary richness): AI tends to repeat phrases
         - Filler phrase density: AI models overuse specific connective phrases
         - Paragraph uniformity: AI produces suspiciously consistent paragraph lengths
-        - Punctuation variance
-
-        Limitation: statistical detection; not a neural classifier.
-        Mixed human/AI text or edited AI text may score lower.
+        - detection_engine: "layer1_statistical" — LAYER_1_FALLBACK flag set
 
         Args:
             params.text: Text to analyse (50 chars minimum)
+            params.hf_token: HuggingFace token for neural backends (optional)
             params.lang: 'en' or 'es'
             params.report_mode: 'quick' or 'full'
 
@@ -86,6 +102,58 @@ def register_detect_ai_generated_text(mcp: FastMCP) -> None:
             str: AI probability verdict or signed Forensic Certificate
         """
         try:
+            flags: list[str] = []
+
+            # ── Neural path ──────────────────────────────────────────────────
+            if params.hf_token:
+                text_bytes = params.text.encode("utf-8")
+                ensemble_result = await run_ensemble(
+                    [HFTextBackend(params.hf_token)],
+                    text_bytes,
+                    "text/plain",
+                )
+
+                if ensemble_result.verdict == "DETECTION_UNAVAILABLE":
+                    flags.append("NEURAL_BACKEND_FAILED: falling back to statistical analysis")
+                    use_neural = False
+                else:
+                    use_neural = True
+                    neural_score = ensemble_result.score
+                    verdict = ensemble_result.verdict
+                    ai_score = int(neural_score * 100)
+
+                    if ensemble_result.attribution:
+                        flags.append(f"NOTE: {ensemble_result.attribution}")
+                    if ensemble_result.backends_failed:
+                        flags.append(f"Backends failed: {', '.join(ensemble_result.backends_failed)}")
+
+                    findings = {
+                        "verdict": verdict,
+                        "ai_probability_score": ai_score,
+                        "trust_score": 100 - ai_score,
+                        "detection_engine": "neural_ensemble",
+                        "ensemble_score": neural_score,
+                        "ensemble_confidence": ensemble_result.confidence,
+                        "backends_used": ensemble_result.backends_used,
+                        "backend_scores": ensemble_result.backend_scores,
+                        "forensic_flags": flags,
+                    }
+
+                    if params.report_mode == "quick":
+                        return _quick(verdict, 100 - ai_score, flags, params.lang)
+
+                    report = ForensicReporter.generate_report("detect_ai_generated_text", findings, params.lang)
+                    return ForensicReporter.format_certificate(report, findings)
+            else:
+                use_neural = False
+
+            # ── Statistical fallback ─────────────────────────────────────────
+            if not use_neural:
+                flags.append(
+                    "LAYER_1_FALLBACK: no HuggingFace token — using statistical heuristics only. "
+                    "Provide hf_token for neural ensemble detection."
+                )
+
             result = analyze_text_authenticity(params.text)
 
             if "error" in result:
@@ -93,7 +161,6 @@ def register_detect_ai_generated_text(mcp: FastMCP) -> None:
 
             verdict  = result["verdict"]
             ai_score = result["ai_probability_score"]
-            flags: list[str] = []
 
             if result["flags"]["low_burstiness"]:
                 flags.append(f"Low sentence-length variance (burstiness={result['burstiness']})")
@@ -108,6 +175,7 @@ def register_detect_ai_generated_text(mcp: FastMCP) -> None:
                 "verdict": verdict,
                 "ai_probability_score": ai_score,
                 "trust_score": 100 - ai_score,
+                "detection_engine": "layer1_statistical",
                 "word_count": result["word_count"],
                 "sentence_count": result["sentence_count"],
                 "burstiness": result["burstiness"],
