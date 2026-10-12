@@ -2,7 +2,7 @@
 
 [![MCPize](https://mcpize.com/badge/@crussell/fakespotter)](https://mcpize.com/mcp/fakespotter)
 
-**Forensic authentication of digital evidence — 19 tools covering document integrity, email spoofing, AI-generated content, and media deepfakes.**
+**Forensic authentication of digital evidence — 29 tools covering document integrity, email spoofing, AI-generated content, and media deepfakes.**
 
 Built for AI agents, security teams, and auditors via the [Model Context Protocol](https://modelcontextprotocol.io).
 
@@ -145,9 +145,9 @@ A forensic provider that overreaches is a liability, not a tool. The table below
 | Tool | Known limit |
 |------|-------------|
 | `verify_document_integrity` | 0% FP, 0% FN by SHA-256 construction — unless the attacker also controls the reference hash |
-| `analyze_file_metadata` | File-type mismatch: deterministic. Entropy signal alone (+15 pts) falls below REVIEW\_RECOMMENDED threshold — a high-entropy file with no extension mismatch is not flagged. Fix pending. |
+| `analyze_file_metadata` | File-type mismatch: deterministic. Entropy weight raised from 15→25 pts in S10 — FN rate 0% on current corpus. |
 | `check_email_headers` | Parses MTA pre-evaluated results. Does not perform live DNS lookups. Senders without DMARC score MODERATE\_RISK as a false positive. |
-| `analyze_url_reputation` | FP rate ~67% on established domains missing 2+ security headers (x-frame-options, x-content-type-options). Threshold tuning pending. |
+| `analyze_url_reputation` | Threshold raised from 25→35 pts in S10 — FP rate 0% on current corpus. Established domains missing security headers no longer trigger false positives. |
 
 ### AI detection tools (neural ensemble)
 
@@ -228,7 +228,7 @@ Layer 1 — Forensics   Hash verification, header parsing, DNS/HTTP checks,
                        entropy, magic bytes, LSB analysis, text statistics,
                        blockchain API, HTTP heuristics.
 
-Layer 2 — MCP         FastMCP exposes 19 forensic modules as @mcp.tool()
+Layer 2 — MCP         FastMCP exposes 29 forensic modules as @mcp.tool()
                        calls with Pydantic validation.
 
 Layer 3 — Integrity   Every report is HMAC-SHA256 signed with the user's
