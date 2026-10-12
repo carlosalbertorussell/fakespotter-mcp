@@ -282,7 +282,15 @@ def register_detect_ai_generated_image(mcp: FastMCP) -> None:
 
 class AnalyzeAudioInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-    media_url:   str = Field(..., description="URL of the audio or video to analyse")
+    media_url:   str = Field(..., description=(
+        "Public URL of the audio or video to analyse. "
+        "Supported: MP3, WAV, FLAC, OGG/Opus (WhatsApp/Telegram), "
+        "M4A/AAC (iOS), WebM, AMR, 3GP, direct video URL."
+    ))
+    hf_token:    str = Field("", description="HuggingFace token (free at hf.co/settings/tokens). "
+        "Enables HFAudioBackend: koyelog/deepfake-voice-detector-sota + motheecreator/Deepfake-audio-detection.")
+    se_user:     str = Field("", description="Sightengine API user (optional, free tier available)")
+    se_secret:   str = Field("", description="Sightengine API secret (optional)")
     lang:        Literal["en", "es"] = Field("en")
     report_mode: Literal["quick", "full"] = Field("quick")
 
@@ -295,12 +303,80 @@ def register_analyze_audio_authenticity(mcp: FastMCP) -> None:
                            "idempotentHint": True, "openWorldHint": True})
     async def analyze_audio_authenticity(params: AnalyzeAudioInput) -> str:
         """
-        Metadata + encoding heuristics for audio authenticity.
-        Note: neural audio deepfake detection coming in Sprint 6.
+        Detects AI-generated or cloned voice audio using a neural ensemble
+        (HuggingFace deepfake voice detectors) with Layer-1 metadata fallback.
+
+        Neural backends (BYOK, free-tier available):
+          HFAudioBackend:
+            koyelog/deepfake-voice-detector-sota     — Wav2Vec2+BiGRU+MHA, ASVspoof 2021, weight 0.6
+            motheecreator/Deepfake-audio-detection   — Wav2Vec2 fine-tuned for TTS/VC, weight 0.4
+
+        Without backend keys: falls back to Layer-1 metadata heuristics
+        (bitrate, sample rate, TTS keywords) with LAYER_1_FALLBACK flag in the certificate.
+
+        Supported input formats:
+          MP3, WAV, FLAC — native
+          OGG/Opus       — WhatsApp, Telegram voice messages
+          M4A/AAC        — iOS voice memos
+          WebM/Opus      — web/browser recordings
+          AMR, 3GP       — legacy mobile
+          Video URLs     — audio extracted automatically
         """
         try:
+            from utils.audio import download_audio_direct, to_wav_16k_mono, detect_mime
+            from backends import HFAudioBackend
+
+            flags: list[str] = []
+
+            # ── Build neural backends ──────────────────────────────────────
+            audio_backends = []
+            if params.hf_token:
+                audio_backends.append(HFAudioBackend(params.hf_token))
+            # Sightengine does not offer a standalone voice-deepfake model;
+            # se_user/se_secret accepted for forward-compat but not used here.
+
+            # ── Neural path ────────────────────────────────────────────────
+            if audio_backends:
+                try:
+                    audio_bytes, detected_mime = await download_audio_direct(params.media_url)
+                except Exception:
+                    # Fallback: extract via yt-dlp for platform URLs
+                    tmp_path = None
+                    try:
+                        tmp_path, _ = download_video(params.media_url)
+                        audio_bytes = tmp_path.read_bytes()
+                        detected_mime = detect_mime(audio_bytes, str(tmp_path))
+                    except Exception as e2:
+                        return f"[FakeSpotter Error] Could not download audio: {e2}"
+                    finally:
+                        cleanup_file(tmp_path)
+
+                try:
+                    wav_bytes, format_label = to_wav_16k_mono(audio_bytes, detected_mime)
+                    flags.append(f"Input format: {format_label}")
+                except RuntimeError as e:
+                    return f"[FakeSpotter Error] Audio conversion failed: {e}"
+
+                ensemble_result = await run_ensemble(audio_backends, wav_bytes, "audio/wav")
+                score   = ensemble_result.score
+                verdict = _score_to_verdict(score)
+                for b in ensemble_result.backend_results:
+                    flags.append(f"{b.backend_name}: score={b.score:.0f} ({b.label})")
+                findings = {
+                    "verdict":           verdict,
+                    "trust_score":       100 - score,
+                    "detection_engine":  "neural_ensemble",
+                    "models_used":       [b.backend_name for b in ensemble_result.backend_results],
+                    "forensic_flags":    flags,
+                }
+                if params.report_mode == "quick":
+                    return _build_quick(verdict, 100 - score, flags, params.lang)
+                report = ForensicReporter.generate_report("analyze_audio_authenticity", findings, params.lang)
+                return ForensicReporter.format_certificate(report, findings)
+
+            # ── Layer-1 fallback ───────────────────────────────────────────
+            flags.append("LAYER_1_FALLBACK: no neural backend keys — accuracy limited, provide hf_token for reliable detection")
             meta    = fetch_media_metadata(params.media_url)
-            flags:  list[str] = []
             score   = 0
             acodec  = meta.get("acodec", "none") or "none"
             abr     = meta.get("abr", 0) or 0
@@ -320,14 +396,15 @@ def register_analyze_audio_authenticity(mcp: FastMCP) -> None:
                 score += 10; flags.append(f"Re-encode signature: {encoder}")
             score   = min(100, score)
             verdict = _score_to_verdict(score)
-            findings= {"verdict": verdict, "trust_score": 100-score,
+            findings= {"verdict": verdict, "trust_score": 100 - score,
                        "detection_engine": "layer1_metadata",
                        "audio_codec": acodec, "bitrate_kbps": abr,
                        "sample_rate_hz": asr, "forensic_flags": flags}
             if params.report_mode == "quick":
-                return _build_quick(verdict, 100-score, flags, params.lang)
+                return _build_quick(verdict, 100 - score, flags, params.lang)
             report  = ForensicReporter.generate_report("analyze_audio_authenticity", findings, params.lang)
             return ForensicReporter.format_certificate(report, findings)
+
         except Exception as exc:
             return f"[FakeSpotter Error] {type(exc).__name__}: {exc}"
 

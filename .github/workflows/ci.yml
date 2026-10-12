@@ -24,4 +24,6 @@ jobs:
         run: pip list
       - name: Arranque e inventario de tools
         run: python scripts/ci_check.py
+      - name: Regression tests (neural wiring + statistical fallback)
+        run: python scripts/regression_test.py
         
