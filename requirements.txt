@@ -11,7 +11,7 @@ numpy>=2.5.3,<3
 uvicorn>=0.52.4,<1
 # Dependencia directa: la importan los 6 modulos de src/tools/.
 # Hoy funciona solo porque `mcp` la arrastra; si eso cambia, rompe sin aviso.
-pydantic>=2.13.5,<3
+pydantic>=2.14.0,<3
 pymupdf>=1.28.2,<2
 pyhanko>=0.37.0,<1
 cryptography>=50.0.1,<51
