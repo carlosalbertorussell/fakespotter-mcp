@@ -1,5 +1,5 @@
 # Usa una versión específica para asegurar la reproducibilidad
-FROM python:3.14-slim-bookworm 
+FROM python:3.15-slim-bookworm 
 
 # Evitar logs de caché y buffers
 ENV PYTHONDONTWRITEBYTECODE=1
