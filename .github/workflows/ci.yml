@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+# Least privilege: every job only checks out the repo.
+permissions:
+  contents: read
 jobs:
   docs-sync:
     name: docs sync gate (pre-merge)
