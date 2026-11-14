@@ -68,17 +68,23 @@ def _validate_iban(value: str) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# CBU / CVU — Argentina, two 7-weight check digits
+# CBU / CVU — Argentina, two weighted mod-10 check digits (BCRA)
 # ---------------------------------------------------------------------------
+# BCRA (Comunicacion "A" 2795): the 22 digits are two blocks.
+#   Block 1 (digits 1-8):  bank (3) + branch (4) + check digit (digit 8),
+#                          weights 7,1,3,9,7,1,3 over digits 1-7.
+#   Block 2 (digits 9-22): account (13) + check digit (digit 22),
+#                          weights 3,9,7,1,3,9,7,1,3,9,7,1,3 over digits 9-21.
+# check = (10 - sum(d * w) mod 10) mod 10. CVUs use the same algorithm.
 
-_CBU_WEIGHTS_1 = [3, 1, 7, 1, 7, 1, 3]  # block 1: positions 0-6
-_CBU_WEIGHTS_2 = [3, 1, 7, 1, 7, 1, 3]  # block 2: positions 9-15 + 16-21
+_CBU_WEIGHTS_1 = [7, 1, 3, 9, 7, 1, 3]
+_CBU_WEIGHTS_2 = [3, 9, 7, 1, 3, 9, 7, 1, 3, 9, 7, 1, 3]
 
 
 def _cbu_check_digit(digits: list[int], weights: list[int]) -> int:
+    assert len(digits) == len(weights)
     total = sum(d * w for d, w in zip(digits, weights))
-    remainder = total % 10
-    return 0 if remainder == 0 else 10 - remainder
+    return (10 - total % 10) % 10
 
 
 def _validate_cbu(value: str, label: str = "CBU") -> tuple[bool, str]:
@@ -89,7 +95,7 @@ def _validate_cbu(value: str, label: str = "CBU") -> tuple[bool, str]:
 
     digits = [int(c) for c in clean]
 
-    # Block 1: first 8 digits (bank 3 + branch 4 + check 1)
+    # Block 1: digits 1-7 (bank 3 + branch 4), check digit at position 8
     expected_check1 = _cbu_check_digit(digits[:7], _CBU_WEIGHTS_1)
     if digits[7] != expected_check1:
         return False, (
@@ -97,17 +103,12 @@ def _validate_cbu(value: str, label: str = "CBU") -> tuple[bool, str]:
             f"position 8 = {digits[7]}, expected {expected_check1}"
         )
 
-    # Block 2: positions 8-21 (account 13 + check 2)
-    expected_check2 = _cbu_check_digit(digits[8:15], _CBU_WEIGHTS_2)
-    # Note: second check is at position 21 (index 21), covers digits 8-20
-    expected_check2b = _cbu_check_digit(digits[8:21], _CBU_WEIGHTS_2 + [3, 1, 7, 1, 7, 1])
-    check2 = digits[21]
-    # Use simpler 7-weight on positions 14-20
-    exp = _cbu_check_digit(digits[14:21], _CBU_WEIGHTS_2)
-    if check2 != exp:
+    # Block 2: digits 9-21 (account 13), check digit at position 22
+    expected_check2 = _cbu_check_digit(digits[8:21], _CBU_WEIGHTS_2)
+    if digits[21] != expected_check2:
         return False, (
             f"{label} block-2 check digit FAILED: "
-            f"position 22 = {check2}, expected {exp}"
+            f"position 22 = {digits[21]}, expected {expected_check2}"
         )
 
     bank_code   = clean[:3]
@@ -158,13 +159,14 @@ def _validate_clabe(value: str) -> tuple[bool, str]:
 def _detect_format(value: str) -> str:
     """Auto-detect account format from structure."""
     clean = re.sub(r"\s", "", value.upper())
+    # Returns the same lower-case names as the ``format`` parameter.
     if re.match(r"^[A-Z]{2}\d{2}", clean):
-        return "IBAN"
+        return "iban"
     if re.fullmatch(r"\d{22}", clean):
-        return "CBU_CVU"   # ambiguous until context; treat as CBU (same algorithm)
+        return "cbu"   # CBU and CVU are indistinguishable by structure (same algorithm)
     if re.fullmatch(r"\d{18}", clean):
-        return "CLABE"
-    return "UNKNOWN"
+        return "clabe"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +218,7 @@ def register_validate_bank_account(mcp: MCPServer) -> None:
 
         Supported formats and algorithms:
           IBAN   — ISO 13616, mod 97 (77 countries, SEPA + global)
-          CBU    — Argentina, 22 digits, two 7-weight check digits
+          CBU    — Argentina, 22 digits, two BCRA weighted check digits
           CVU    — Argentina, 22 digits, identical algorithm to CBU
           CLABE  — Mexico, 18 digits, weighted mod 10 (CNBV standard)
 
@@ -237,16 +239,15 @@ def register_validate_bank_account(mcp: MCPServer) -> None:
             fmt = params.format
             if fmt == "auto":
                 fmt = _detect_format(clean)
-                flags.append(f"Format auto-detected: {fmt}")
+                flags.append(f"Format auto-detected: {fmt.upper()}")
 
             # Validate
-            if fmt in ("iban",) or (fmt == "auto" and re.match(r"^[A-Z]{2}", clean)):
+            if fmt == "iban":
                 valid, detail = _validate_iban(clean)
                 fmt_label = "IBAN"
-            elif fmt in ("cbu", "cvu", "CBU_CVU"):
-                label = fmt.upper() if fmt in ("cbu", "cvu") else "CBU"
-                valid, detail = _validate_cbu(clean, label)
-                fmt_label = label
+            elif fmt in ("cbu", "cvu"):
+                fmt_label = fmt.upper()
+                valid, detail = _validate_cbu(clean, fmt_label)
             elif fmt == "clabe":
                 valid, detail = _validate_clabe(clean)
                 fmt_label = "CLABE"

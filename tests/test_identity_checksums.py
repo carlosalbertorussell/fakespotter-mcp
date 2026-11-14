@@ -102,11 +102,15 @@ def test_iban_wrong_length_fails():
     assert "Invalid length for GB IBAN: expected 22, got 20" in res.text
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: with format='auto' _detect_format returns 'IBAN' (upper case) but the dispatcher "
-    "only matches 'iban', so every auto-detected IBAN is reported FORMAT_UNRECOGNIZED."))
-def test_iban_auto_detected():
-    assert "CHECKSUM_VALID [IBAN]" in _bank(IBANS[0]).text
+@pytest.mark.parametrize("iban", IBANS)
+def test_iban_auto_detected(iban):
+    res = _bank(iban)
+    assert "CHECKSUM_VALID [IBAN]" in res.text, res.text
+
+
+def test_iban_auto_detected_invalid_is_still_checked():
+    clean = IBANS[0].replace(" ", "")
+    assert "CHECKSUM_INVALID [IBAN]" in _bank(_change_digit(clean, 3)).text
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +131,6 @@ def test_clabe_one_digit_changed_fails(pos):
     assert "CLABE check digit FAILED" in res.text
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: with format='auto' _detect_format returns 'CLABE' but the dispatcher only matches "
-    "'clabe', so every auto-detected CLABE is reported FORMAT_UNRECOGNIZED."))
 def test_clabe_auto_detected():
     assert "CHECKSUM_VALID [CLABE]" in _bank(CLABE).text
 
@@ -138,19 +139,11 @@ def test_clabe_auto_detected():
 # CBU / CVU
 # ---------------------------------------------------------------------------
 
-_CBU_BUG = (
-    "BUG: bank_tools._validate_cbu uses weights 3171713 for block 1 and only digits 15-21 for "
-    "block 2; BCRA specifies 7139713 over digits 1-7 and 3971397139713 over digits 9-21, so "
-    "genuine CBUs/CVUs are rejected.")
-
-
-@pytest.mark.xfail(strict=True, reason=_CBU_BUG)
 @pytest.mark.parametrize("fmt", ["cbu", "auto"])
 def test_cbu_valid(fmt):
     assert "CHECKSUM_VALID [CBU]" in _bank(CBU, fmt).text
 
 
-@pytest.mark.xfail(strict=True, reason=_CBU_BUG)
 def test_cvu_valid():
     assert "CHECKSUM_VALID [CVU]" in _bank(CVU, "cvu").text
 
@@ -163,21 +156,25 @@ def test_cbu_one_digit_changed_fails(pos):
     assert "CHECKSUM_INVALID [CBU]" in res.text, res.text
 
 
-_CVU_FALSE_ACCEPT = pytest.mark.xfail(strict=True, reason=(
-    "BUG (same root cause as the CBU weights): this altered CVU fails the BCRA check but happens "
-    "to satisfy the tool's incorrect block-2 rule, so the tool reports it CHECKSUM_VALID."))
-
-
-@pytest.mark.parametrize("pos", [
-    5, 7,
-    pytest.param(15, marks=_CVU_FALSE_ACCEPT),
-    pytest.param(21, marks=_CVU_FALSE_ACCEPT),
-])
+@pytest.mark.parametrize("pos", [5, 7, 15, 21])
 def test_cvu_one_digit_changed_fails(pos):
     changed = _change_digit(CVU, pos)
     assert not _cbu_is_valid(changed)
     res = _bank(changed, "cvu")
     assert "CHECKSUM_INVALID [CVU]" in res.text, res.text
+
+
+@pytest.mark.parametrize("pos", range(22))
+def test_cbu_every_single_digit_change_agrees_with_bcra(pos):
+    changed = _change_digit(CBU, pos)
+    res = _bank(changed, "cbu")
+    expected = "CHECKSUM_VALID [CBU]" if _cbu_is_valid(changed) else "CHECKSUM_INVALID [CBU]"
+    assert expected in res.text, res.text
+
+
+def test_cbu_detail_reports_bank_branch_account():
+    res = _bank(CBU, "cbu")
+    assert "Bank: 285 | Branch: 0590 | Account: 4009041813520" in res.text, res.text
 
 
 # ---------------------------------------------------------------------------
