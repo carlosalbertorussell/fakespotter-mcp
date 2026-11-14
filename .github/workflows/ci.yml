@@ -32,9 +32,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
       - name: Versiones resueltas
         run: pip list
       - name: Arranque e inventario de tools
         run: python scripts/ci_check.py
       - name: Regression tests (neural wiring + statistical fallback)
         run: python scripts/regression_test.py
+      - name: Real-library tool tests (pytest, offline, separate process)
+        run: python -m pytest -ra
