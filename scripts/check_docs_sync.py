@@ -41,7 +41,10 @@ readme_tools = int(m2.group(1))
 
 # ── 3. También verificar la sección de arquitectura ─────────────────────────
 
-arch_matches = re.findall(r"FastMCP exposes (\d+) forensic modules", readme)
+# Matches "MCPServer exposes N forensic modules" (the mcp 2.x server class).
+# The sentence is required: if it is reworded so
+# the pattern no longer matches, the gate fails instead of silently passing.
+arch_matches = re.findall(r"MCPServer exposes (\d+) forensic modules", readme)
 arch_count = int(arch_matches[0]) if arch_matches else None
 
 # ── 4. Comparar ─────────────────────────────────────────────────────────────
@@ -54,7 +57,12 @@ if readme_tools != expected_tools:
         f"ci_check.py EXPECTED_TOOLS={expected_tools}"
     )
 
-if arch_count is not None and arch_count != expected_tools:
+if arch_count is None:
+    errors.append(
+        "  README Architecture section no longer contains "
+        "'MCPServer exposes N forensic modules'"
+    )
+elif arch_count != expected_tools:
     errors.append(
         f"  README Architecture section dice {arch_count} forensic modules, "
         f"ci_check.py EXPECTED_TOOLS={expected_tools}"

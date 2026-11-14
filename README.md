@@ -228,7 +228,7 @@ Layer 1 — Forensics   Hash verification, header parsing, DNS/HTTP checks,
                        entropy, magic bytes, LSB analysis, text statistics,
                        blockchain API, HTTP heuristics.
 
-Layer 2 — MCP         FastMCP exposes 29 forensic modules as @mcp.tool()
+Layer 2 — MCP         MCPServer exposes 29 forensic modules as @mcp.tool()
                        calls with Pydantic validation.
 
 Layer 3 — Integrity   Every report is HMAC-SHA256 signed with the user's
