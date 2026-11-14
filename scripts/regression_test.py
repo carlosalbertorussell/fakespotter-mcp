@@ -90,24 +90,45 @@ def _hf_audio_mock_response(model_id: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Public MCP call path
+# ---------------------------------------------------------------------------
+
+async def _call_registered_tool(register, name: str, params) -> str:
+    """Registra la tool en un MCPServer y la invoca con un cliente MCP real.
+
+    Usa solo la API publica (initialize + tools/call sobre JSON-RPC en memoria),
+    asi el test cubre la validacion de argumentos y la serializacion del resultado.
+    """
+    from mcp.client import Client
+    from mcp.server.mcpserver import MCPServer
+
+    server = MCPServer("test")
+    register(server)
+    async with Client(server, mode="legacy") as client:
+        result = await client.call_tool(name, {"params": params.model_dump(mode="json")})
+    if result.is_error:
+        raise AssertionError(f"{name} devolvio is_error: {result.content!r}")
+    texts = [block.text for block in result.content if block.type == "text"]
+    if len(texts) != 1:
+        raise AssertionError(f"{name}: se esperaba 1 bloque de texto, llegaron {result.content!r}")
+    return texts[0]
+
+
+# ---------------------------------------------------------------------------
 # Tests: detect_ai_generated_text
 # ---------------------------------------------------------------------------
 
 class TestDetectAIGeneratedText(unittest.IsolatedAsyncioTestCase):
 
     async def _call_tool(self, text: str, hf_token: str = "") -> str:
-        """Llama la función de la tool directamente (sin MCP protocol overhead)."""
+        """Llama la tool por el protocolo MCP (cliente en memoria)."""
         from tools.document_tools import DetectAITextInput
         import tools.document_tools as dt
 
-        # Instanciamos el módulo y extraemos la función registrada
-        from mcp.server.fastmcp import FastMCP
-        mcp = FastMCP("test")
-        dt.register_detect_ai_generated_text(mcp)
-        # Extraemos la función directamente del tool manager
-        tool_fn = mcp._tool_manager._tools["detect_ai_generated_text"].fn
         params = DetectAITextInput(text=text, hf_token=hf_token, report_mode="quick")
-        return await tool_fn(params)
+        return await _call_registered_tool(
+            dt.register_detect_ai_generated_text, "detect_ai_generated_text", params,
+        )
 
     async def test_statistical_fallback_returns_layer1_flag(self):
         """Sin hf_token, el resultado incluye LAYER_1_FALLBACK."""
@@ -188,11 +209,6 @@ class TestAnalyzeAudioAuthenticity(unittest.IsolatedAsyncioTestCase):
     ) -> str:
         from tools.media_tools import AnalyzeAudioInput
         import tools.media_tools as mt
-        from mcp.server.fastmcp import FastMCP
-
-        mcp = FastMCP("test")
-        mt.register_analyze_audio_authenticity(mcp)
-        tool_fn = mcp._tool_manager._tools["analyze_audio_authenticity"].fn
 
         params = AnalyzeAudioInput(media_url=media_url, hf_token=hf_token, report_mode="quick")
 
@@ -225,7 +241,9 @@ class TestAnalyzeAudioAuthenticity(unittest.IsolatedAsyncioTestCase):
             mock_client.stream = MagicMock(return_value=mock_resp)
             mock_client_cls.return_value = mock_client
 
-            return await tool_fn(params)
+            return await _call_registered_tool(
+                mt.register_analyze_audio_authenticity, "analyze_audio_authenticity", params,
+            )
 
     async def test_audio_fallback_layer1_flag(self):
         """Sin hf_token, analyze_audio_authenticity incluye LAYER_1_FALLBACK."""
