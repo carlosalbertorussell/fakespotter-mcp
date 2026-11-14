@@ -32,7 +32,7 @@ vs legitimate reuse (same company logo, same header template).
 Dependencies:
   imagehash>=4.3,<5  (perceptual hashing)
   Pillow             (already in requirements, used by imagehash)
-  pymupdf>=1.24,<2   (already in requirements from S11, for PDF extraction)
+  pymupdf>=2.1,<3    (already in requirements from S11, for PDF extraction)
 """
 from __future__ import annotations
 
@@ -67,12 +67,12 @@ def _extract_images_from_bytes(data: bytes, url: str) -> list[bytes]:
     # PDF: rasterize pages + extract embedded images
     if data[:4] == b"%PDF" or url.lower().endswith(".pdf"):
         try:
-            import fitz
-            doc = fitz.open(stream=data, filetype="pdf")
+            import pymupdf
+            doc = pymupdf.open(stream=data, filetype="pdf")
             for page_num in range(min(doc.page_count, MAX_PAGES_PER_PDF)):
                 page = doc[page_num]
-                mat  = fitz.Matrix(PDF_DPI / 72, PDF_DPI / 72)
-                pix  = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+                mat  = pymupdf.Matrix(PDF_DPI / 72, PDF_DPI / 72)
+                pix  = page.get_pixmap(matrix=mat, colorspace=pymupdf.csRGB)
                 images.append(pix.tobytes("jpeg"))
                 # Also extract embedded image XObjects
                 for img in doc.get_page_images(page_num):

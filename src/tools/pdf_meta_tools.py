@@ -99,9 +99,9 @@ def _producer_category(producer: str) -> str:
 
 def _extract_pdf_metadata(pdf_bytes: bytes) -> dict:
     """Extract all forensically relevant metadata from a PDF using PyMuPDF."""
-    import fitz  # PyMuPDF
+    import pymupdf
 
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     meta = doc.metadata or {}
     trailer = doc.pdf_trailer() or {}
     perm = doc.permissions
@@ -341,7 +341,7 @@ def register_analyze_pdf_metadata(mcp: FastMCP) -> None:
             except ImportError:
                 return (
                     "[FakeSpotter Error] PyMuPDF not installed. "
-                    "Add pymupdf>=1.24,<2 to requirements.txt."
+                    "Add pymupdf>=2.1,<3 to requirements.txt."
                 )
 
             verdict, score, flags = _analyze_metadata(raw_meta)

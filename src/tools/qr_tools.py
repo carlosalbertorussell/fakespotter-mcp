@@ -12,7 +12,7 @@ Supported input formats:
 
 Dependencies:
   opencv-python-headless (already in requirements)
-  pymupdf>=1.24,<2 (added in S11)
+  pymupdf>=2.1,<3 (added in S11)
 """
 from __future__ import annotations
 
@@ -101,16 +101,16 @@ def _decode_from_image_bytes(img_bytes: bytes) -> list[str]:
 
 def _decode_from_pdf(pdf_bytes: bytes, max_pages: int = 10) -> list[tuple[int, str]]:
     """Rasterize each PDF page and scan for QR codes. Returns [(page, data), ...]."""
-    import fitz  # PyMuPDF
+    import pymupdf
 
     results: list[tuple[int, str]] = []
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
 
     for page_num in range(min(len(doc), max_pages)):
         page = doc[page_num]
         # 150 DPI — enough for QR detection without excessive memory
-        mat = fitz.Matrix(150 / 72, 150 / 72)
-        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+        mat = pymupdf.Matrix(150 / 72, 150 / 72)
+        pix = page.get_pixmap(matrix=mat, colorspace=pymupdf.csRGB)
         img_bytes = pix.tobytes("jpeg")
         decoded = _decode_from_image_bytes(img_bytes)
         for d in decoded:
@@ -223,7 +223,7 @@ def register_inspect_qr_code(mcp: FastMCP) -> None:
                 except ImportError:
                     return (
                         "[FakeSpotter Error] PyMuPDF not installed. "
-                        "Add pymupdf>=1.24,<2 to requirements.txt."
+                        "Add pymupdf>=2.1,<3 to requirements.txt."
                     )
             else:
                 decoded = _decode_from_image_bytes(file_bytes)

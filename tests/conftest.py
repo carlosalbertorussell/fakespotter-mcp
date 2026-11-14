@@ -48,7 +48,7 @@ def _real_libraries_loaded():
     """Import the heavy libraries for real and make sure none is a stub."""
     import importlib
 
-    for name in ("PIL.Image", "fitz", "cv2", "pyhanko", "imagehash", "numpy"):
+    for name in ("PIL.Image", "pymupdf", "cv2", "pyhanko", "imagehash", "numpy"):
         mod = importlib.import_module(name)
         assert not isinstance(mod, MagicMock), f"{name} is stubbed"
         assert isinstance(mod, types.ModuleType), f"{name} is not a real module"
