@@ -1,13 +1,13 @@
 """
 Gap 5b — the exact tool inventory, listed through the public MCP client API
-(the same check scripts/ci_check.py does with FastMCP.list_tools).
+(the same check scripts/ci_check.py does with mcp.client.Client).
 """
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
 
-from tests.mcp_client import list_tool_names
+from tests.mcp_client import list_tool_names, list_tools
 
 
 def _ci_check():
@@ -28,15 +28,5 @@ def test_tool_names_match_ci_inventory():
 
 def test_every_tool_takes_a_single_params_object():
     # tests/mcp_client.call_tool relies on this calling convention.
-    import asyncio
-
-    from mcp.shared.memory import create_connected_server_and_client_session
-
-    from tests.mcp_client import _server
-
-    async def _schemas():
-        async with create_connected_server_and_client_session(_server()) as session:
-            return (await session.list_tools()).tools
-
-    for tool in asyncio.run(_schemas()):
-        assert list(tool.inputSchema.get("properties", {})) == ["params"], tool.name
+    for tool in list_tools():
+        assert list(tool.input_schema.get("properties", {})) == ["params"], tool.name

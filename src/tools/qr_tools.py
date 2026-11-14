@@ -22,7 +22,7 @@ from typing import Literal
 import cv2
 import httpx
 import numpy as np
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -157,7 +157,7 @@ class InspectQRCodeInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_inspect_qr_code(mcp: FastMCP) -> None:
+def register_inspect_qr_code(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="inspect_qr_code",
@@ -297,5 +297,5 @@ def register_inspect_qr_code(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_inspect_qr_code(mcp)

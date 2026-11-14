@@ -13,7 +13,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -143,7 +143,7 @@ class ScanPhishingURLInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_scan_phishing_url(mcp: FastMCP) -> None:
+def register_scan_phishing_url(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="scan_phishing_url",
@@ -330,7 +330,7 @@ class CheckEmailHeadersInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_check_email_headers(mcp: FastMCP) -> None:
+def register_check_email_headers(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="check_email_headers",
@@ -487,7 +487,7 @@ class AnalyzeURLReputationInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_analyze_url_reputation(mcp: FastMCP) -> None:
+def register_analyze_url_reputation(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="analyze_url_reputation",
@@ -626,7 +626,7 @@ def register_analyze_url_reputation(mcp: FastMCP) -> None:
 # Registration entry point
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_scan_phishing_url(mcp)
     register_check_email_headers(mcp)
     register_analyze_url_reputation(mcp)

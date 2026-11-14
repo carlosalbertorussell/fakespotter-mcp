@@ -29,7 +29,7 @@ import re
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -200,7 +200,7 @@ class ValidateMRZInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_validate_mrz(mcp: FastMCP) -> None:
+def register_validate_mrz(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="validate_mrz",
@@ -345,5 +345,5 @@ def register_validate_mrz(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_validate_mrz(mcp)

@@ -11,7 +11,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.analysis import extract_exif
@@ -46,7 +46,7 @@ class AnalyzeImageMetadataInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_analyze_image_metadata(mcp: FastMCP) -> None:
+def register_analyze_image_metadata(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="analyze_image_metadata",
@@ -193,7 +193,7 @@ _PLATFORM_PATTERNS: dict[str, dict] = {
 }
 
 
-def register_verify_social_profile(mcp: FastMCP) -> None:
+def register_verify_social_profile(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="verify_social_profile",
@@ -341,6 +341,6 @@ def register_verify_social_profile(mcp: FastMCP) -> None:
 # Registration entry point
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_analyze_image_metadata(mcp)
     register_verify_social_profile(mcp)

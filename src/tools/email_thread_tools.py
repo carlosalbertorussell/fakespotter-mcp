@@ -34,7 +34,7 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -239,7 +239,7 @@ class AnalyzeEmailThreadInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_analyze_email_thread(mcp: FastMCP) -> None:
+def register_analyze_email_thread(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="analyze_email_thread",
@@ -325,5 +325,5 @@ def register_analyze_email_thread(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_analyze_email_thread(mcp)

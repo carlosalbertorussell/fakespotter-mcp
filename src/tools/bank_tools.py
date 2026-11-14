@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -194,7 +194,7 @@ class ValidateBankAccountInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_validate_bank_account(mcp: FastMCP) -> None:
+def register_validate_bank_account(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="validate_bank_account",
@@ -285,5 +285,5 @@ def register_validate_bank_account(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_validate_bank_account(mcp)

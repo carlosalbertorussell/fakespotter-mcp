@@ -41,7 +41,7 @@ import math
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -217,7 +217,7 @@ class CorrelateDocumentsInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_correlate_documents(mcp: FastMCP) -> None:
+def register_correlate_documents(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="correlate_documents",
@@ -356,5 +356,5 @@ def register_correlate_documents(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_correlate_documents(mcp)
