@@ -35,17 +35,36 @@ from utils.reporter import ForensicReporter
 # Signature extraction helpers
 # ---------------------------------------------------------------------------
 
-def _verify_signatures(pdf_bytes: bytes) -> list[dict]:
+def _name_attr(name, key: str) -> str:
+    """One attribute of an asn1crypto x509.Name (``.native`` is a dict of str/list)."""
+    value = (name.native or {}).get(key, "")
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return str(value)
+
+
+async def _verify_signatures(pdf_bytes: bytes) -> list[dict]:
     """
     Extract and verify all digital signatures in a PDF.
     Returns list of per-signature result dicts.
+
+    Uses pyHanko's async validation API: the synchronous wrappers call
+    ``asyncio.run`` and cannot be used from inside the running event loop.
     """
     from pyhanko.pdf_utils.reader import PdfFileReader
-    from pyhanko.sign.validation import validate_pdf_signature
-    from pyhanko.sign.validation.settings import KeyUsageConstraints
-    from pyhanko_certvalidator import CertificateValidator
+    from pyhanko.sign.ades.report import AdESIndeterminate
+    from pyhanko.sign.validation import SignatureCoverageLevel, async_validate_pdf_signature
     from pyhanko_certvalidator.context import ValidationContext
     import io
+
+    # Trust problems that mean "the chain validates, but the certificate's
+    # validity period has ended" (pyHanko reports an expired end-entity
+    # certificate without proof of existence as OUT_OF_BOUNDS_NO_POE).
+    expiry_only = {
+        AdESIndeterminate.OUT_OF_BOUNDS_NO_POE,
+        AdESIndeterminate.OUT_OF_BOUNDS_NOT_REVOKED,
+        AdESIndeterminate.EXPIRED,
+    }
 
     results = []
     reader = PdfFileReader(io.BytesIO(pdf_bytes))
@@ -69,42 +88,40 @@ def _verify_signatures(pdf_bytes: bytes) -> list[dict]:
         }
 
         try:
+            # Signer info from certificate (asn1crypto x509.Certificate)
+            cert = sig.signer_cert
+            if cert is not None:
+                subject = cert.subject
+                result["signer_cn"]      = _name_attr(subject, "common_name")
+                result["signer_org"]     = _name_attr(subject, "organization_name")
+                result["signer_country"] = _name_attr(subject, "country_name")
+                not_before = cert.not_valid_before
+                not_after  = cert.not_valid_after
+                result["valid_from"]  = not_before.isoformat()
+                result["valid_until"] = not_after.isoformat()
+                if not_after.tzinfo is None:
+                    not_after = not_after.replace(tzinfo=timezone.utc)
+                result["cert_expired"] = not_after < datetime.now(timezone.utc)
+
             # Validate signature (integrity + cert chain)
             vc = ValidationContext(allow_fetching=True)
-            status = validate_pdf_signature(sig, vc)
+            status = await async_validate_pdf_signature(sig, vc)
 
-            # Signer info from certificate
-            cert = sig.signer_cert
-            if cert:
-                subject = cert.subject
-                result["signer_cn"]      = subject.get("common_name", [""])[0] if subject.get("common_name") else ""
-                result["signer_org"]     = subject.get("organization_name", [""])[0] if subject.get("organization_name") else ""
-                result["signer_country"] = subject.get("country_name", [""])[0] if subject.get("country_name") else ""
-                result["valid_from"]  = cert.not_valid_before.isoformat() if hasattr(cert, 'not_valid_before') else ""
-                result["valid_until"] = cert.not_valid_after.isoformat() if hasattr(cert, 'not_valid_after') else ""
-                # Check expiry
-                now = datetime.now(timezone.utc)
-                try:
-                    expiry = cert.not_valid_after
-                    if hasattr(expiry, 'tzinfo') and expiry.tzinfo is None:
-                        from datetime import timezone as tz
-                        expiry = expiry.replace(tzinfo=tz.utc)
-                    result["cert_expired"] = expiry < now
-                except Exception:
-                    pass
-
-            result["integrity_ok"]     = bool(status.intact)
-            result["cert_chain_ok"]    = bool(status.valid)
-            result["covers_whole_doc"] = (
-                status.coverage in (
-                    SignatureCoverageLevel.ENTIRE_FILE,
-                    SignatureCoverageLevel.ENTIRE_REVISION,
-                )
-                if status.coverage is not None else False
+            result["integrity_ok"]  = bool(status.intact)
+            result["cert_chain_ok"] = bool(status.trusted) or (
+                # The chain itself is fine; only the validity period has ended.
+                # Reported through cert_expired instead of as a broken chain.
+                result["cert_expired"]
+                and status.intact and status.valid
+                and status.trust_problem_indic in expiry_only
+            )
+            result["covers_whole_doc"] = status.coverage in (
+                SignatureCoverageLevel.ENTIRE_FILE,
+                SignatureCoverageLevel.ENTIRE_REVISION,
             )
 
             # Signing time
-            if hasattr(status, 'signer_reported_dt') and status.signer_reported_dt:
+            if status.signer_reported_dt:
                 result["signing_time"] = status.signer_reported_dt.isoformat()
 
         except Exception as exc:
@@ -232,7 +249,7 @@ def register_verify_digital_signature(mcp: MCPServer) -> None:
 
             # Verify
             try:
-                sig_results = _verify_signatures(pdf_bytes)
+                sig_results = await _verify_signatures(pdf_bytes)
             except ImportError:
                 return (
                     "[FakeSpotter Error] pyhanko not installed. "

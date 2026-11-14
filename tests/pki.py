@@ -96,6 +96,20 @@ def test_pki() -> TestPKI:
     )
 
 
+@lru_cache(maxsize=1)
+def expired_signer() -> Identity:
+    """A document-signing certificate from the test root whose validity ended 30 days ago."""
+    pki = test_pki()
+    root_key = serialization.load_der_private_key(pki.root.key.dump(), password=None)
+    root_name = x509.load_der_x509_certificate(pki.root.cert.dump()).subject
+    now = dt.datetime.now(dt.timezone.utc)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    cert = _issue("Expired Supplier SA", key, root_name, root_key,
+                  not_before=now - dt.timedelta(days=400),
+                  not_after=now - dt.timedelta(days=30))
+    return _to_asn1(cert, key)
+
+
 # Pytest would otherwise try to collect the factory and the dataclass.
 test_pki.__test__ = False  # type: ignore[attr-defined]
 TestPKI.__test__ = False  # type: ignore[attr-defined]
@@ -132,14 +146,15 @@ def _timestamper():
     )
 
 
-def sign_pdf(pdf: bytes, *, with_timestamp: bool = False) -> bytes:
+def sign_pdf(pdf: bytes, *, with_timestamp: bool = False, identity: Identity | None = None) -> bytes:
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.sign import signers
     from pyhanko_certvalidator.registry import SimpleCertificateStore
 
     pki = test_pki()
+    identity = identity or pki.signer
     signer = signers.SimpleSigner(
-        signing_cert=pki.signer.cert, signing_key=pki.signer.key,
+        signing_cert=identity.cert, signing_key=identity.key,
         cert_registry=SimpleCertificateStore.from_certs([pki.root.cert]),
     )
     writer = IncrementalPdfFileWriter(io.BytesIO(pdf))

@@ -130,22 +130,12 @@ def test_signature_rejects_non_pdf(web):
     assert res.text == "[FakeSpotter Error] File does not appear to be a PDF (magic bytes check failed)"
 
 
-_SIG_BUG = (
-    "BUG: signature_tools._verify_signatures calls pyhanko's synchronous "
-    "validate_pdf_signature (which uses asyncio.run) from inside the async tool, so it raises "
-    "'asyncio.run() cannot be called from a running event loop'; it also references "
-    "SignatureCoverageLevel without importing it and calls .get() on an asn1crypto Name. "
-    "Every signed PDF ends up as SIGNATURE_INVALID with a 'validation error' flag.")
-
-
-@pytest.mark.xfail(strict=True, reason=_SIG_BUG)
 def test_valid_signature(web, signed_pdf, trust_test_root):
     res = _sig(web, signed_pdf)
     assert res.verdict == "SIGNATURE_VALID", res.text
     assert "VALID — signed by Test Supplier SA (AR)" in res.text
 
 
-@pytest.mark.xfail(strict=True, reason=_SIG_BUG)
 def test_modified_after_signing(web, signed_pdf, trust_test_root):
     res = _sig(web, pki.tamper_signed_content(signed_pdf))
     assert res.verdict == "DOCUMENT_MODIFIED_AFTER_SIGNING", res.text
@@ -163,10 +153,47 @@ def test_untrusted_signer_is_invalid(web, signed_pdf):
     assert res.verdict == "SIGNATURE_INVALID", res.text
 
 
-@pytest.mark.xfail(strict=True, reason=_SIG_BUG)
 def test_untrusted_signer_flags_chain(web, signed_pdf):
     res = _sig(web, signed_pdf)
     assert "certificate chain INVALID" in res.text, res.text
+
+
+@pytest.fixture(scope="module")
+def expired_signed_pdf(unsigned_pdf) -> bytes:
+    return pki.sign_pdf(unsigned_pdf, identity=pki.expired_signer())
+
+
+def test_fixture_expired_signer_per_pyhanko(expired_signed_pdf):
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.sign.ades.report import AdESIndeterminate
+    from pyhanko.sign.validation import validate_pdf_signature
+
+    sig = PdfFileReader(io.BytesIO(expired_signed_pdf)).embedded_signatures[0]
+    status = validate_pdf_signature(sig, _vc())
+    assert status.intact and status.valid and not status.trusted
+    assert status.trust_problem_indic == AdESIndeterminate.OUT_OF_BOUNDS_NO_POE
+
+
+def test_expired_signer_certificate(web, expired_signed_pdf, trust_test_root):
+    res = _sig(web, expired_signed_pdf)
+    assert res.verdict == "SIGNATURE_EXPIRED", res.text
+    assert "certificate EXPIRED" in res.text
+    assert "certificate chain INVALID" not in res.text
+    assert "DOCUMENT MODIFIED AFTER SIGNING" not in res.text
+
+
+def test_expired_signer_quick_mode_is_not_authentic(web, expired_signed_pdf, trust_test_root):
+    web.serve(PDF_URL, expired_signed_pdf, "application/pdf")
+    res = call_tool("verify_digital_signature", file_url=PDF_URL)
+    assert "SIGNATURE_EXPIRED" in res.text, res.text
+    assert "AUTHENTIC" not in res.text.split("—")[0].upper(), res.text
+
+
+def test_expired_and_untrusted_signer_is_invalid(web, expired_signed_pdf):
+    # No trust patch: the chain cannot be built, so expiry alone does not explain it.
+    res = _sig(web, expired_signed_pdf)
+    assert res.verdict == "SIGNATURE_INVALID", res.text
+    assert "certificate chain INVALID" in res.text
 
 
 # ---------------------------------------------------------------------------
