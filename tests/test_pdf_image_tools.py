@@ -291,10 +291,29 @@ def test_correlate_needs_two_documents():
     assert res.is_error
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: correlation_tools._correlate always uses the module constant HAMMING_THRESHOLD; "
-    "the hamming_threshold parameter is only echoed in the report, so threshold=0 still "
-    "matches a near-duplicate at distance 1-2."))
 def test_hamming_threshold_parameter_is_applied(web, docs):
     res = _correlate(web, docs, ["template.png", "edited.jpg"], hamming_threshold=0)
     assert res.verdict == "NO_CORRELATION", res.text
+
+
+def test_hamming_threshold_is_the_match_boundary(web, docs):
+    import re
+
+    res = _correlate(web, docs, ["template.png", "edited.jpg"])
+    m = re.search(r"pHash dist=(\d+), dHash dist=(\d+)", res.text)
+    assert m, res.text
+    boundary = max(int(m.group(1)), int(m.group(2)))
+    assert 0 < boundary <= 10
+    at = _correlate(web, docs, ["template.png", "edited.jpg"], hamming_threshold=boundary)
+    assert at.verdict == "ASSETS_SHARED", at.text
+    below = _correlate(web, docs, ["template.png", "edited.jpg"], hamming_threshold=boundary - 1)
+    assert below.verdict == "NO_CORRELATION", below.text
+    assert f"(threshold: Hamming ≤ {boundary - 1} bits)" in below.text
+
+
+def test_identical_documents_match_at_threshold_zero(web, docs):
+    urls = [web.serve(f"{BASE}/a.png", *docs["template.png"]),
+            web.serve(f"{BASE}/b.png", *docs["template.png"])]
+    res = call_tool("correlate_documents", document_urls=urls, hamming_threshold=0,
+                    report_mode="full")
+    assert res.verdict == "ASSETS_SHARED", res.text

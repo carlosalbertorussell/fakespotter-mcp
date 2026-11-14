@@ -134,9 +134,16 @@ def _hamming(a: int, b: int) -> int:
 # Correlation engine
 # ---------------------------------------------------------------------------
 
-def _correlate(doc_assets: dict[str, list[tuple[int, int]]]) -> dict:
+def _correlate(
+    doc_assets: dict[str, list[tuple[int, int]]],
+    threshold: int = HAMMING_THRESHOLD,
+) -> dict:
     """
     Given {doc_label: [(phash, dhash), ...]}, find correlated pairs.
+
+    Two documents share an asset when some pair of their assets is within
+    ``threshold`` bits on BOTH pHash and dHash; the closest such pair
+    (smallest pHash + dHash distance) is reported.
     Returns similarity findings.
     """
     labels = list(doc_assets.keys())
@@ -150,24 +157,20 @@ def _correlate(doc_assets: dict[str, list[tuple[int, int]]]) -> dict:
             a_hashes = doc_assets[a_label]
             b_hashes = doc_assets[b_label]
 
-            min_dist_p = 64
-            min_dist_d = 64
-            best_pair  = None
+            best: tuple[int, int, int, int] | None = None  # (dp, dd, ai, bi)
 
             for ai, (ap, ad) in enumerate(a_hashes):
                 for bi, (bp, bd) in enumerate(b_hashes):
                     dp = _hamming(ap, bp)
                     dd = _hamming(ad, bd)
-                    combined = (dp + dd) // 2
-                    if combined < (min_dist_p + min_dist_d) // 2:
-                        min_dist_p = dp
-                        min_dist_d = dd
-                        best_pair  = (ai, bi)
+                    # Match only if both pHash AND dHash are within threshold
+                    if dp > threshold or dd > threshold:
+                        continue
+                    if best is None or dp + dd < best[0] + best[1]:
+                        best = (dp, dd, ai, bi)
 
-            # Match if both pHash AND dHash are within threshold
-            is_match = min_dist_p <= HAMMING_THRESHOLD and min_dist_d <= HAMMING_THRESHOLD
-
-            if is_match:
+            if best is not None:
+                min_dist_p, min_dist_d, asset_a, asset_b = best
                 correlated_docs.add(a_label)
                 correlated_docs.add(b_label)
                 pairs.append({
@@ -175,8 +178,8 @@ def _correlate(doc_assets: dict[str, list[tuple[int, int]]]) -> dict:
                     "doc_b":         b_label,
                     "phash_distance": min_dist_p,
                     "dhash_distance": min_dist_d,
-                    "asset_a_index":  best_pair[0] if best_pair else 0,
-                    "asset_b_index":  best_pair[1] if best_pair else 0,
+                    "asset_a_index":  asset_a,
+                    "asset_b_index":  asset_b,
                     "confidence":     max(0, 100 - ((min_dist_p + min_dist_d) * 3)),
                 })
 
@@ -299,7 +302,7 @@ def register_correlate_documents(mcp: MCPServer) -> None:
                     flags.append(f"{label}: failed to process — {e}")
 
         # Correlate
-        correlation = _correlate(doc_assets)
+        correlation = _correlate(doc_assets, params.hamming_threshold)
         pairs       = correlation["correlated_pairs"]
 
         if pairs:
