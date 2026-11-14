@@ -181,10 +181,6 @@ def test_url_reputation_good_domain(web):
     assert res.verdict == "GOOD_REPUTATION", res.text
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: network_tools.analyze_url_reputation catches httpx.ConnectSSLError, which does not "
-    "exist in httpx; any failed fetch (e.g. a non-resolving domain) raises AttributeError and the "
-    "tool returns '[FakeSpotter Error] AttributeError' instead of a verdict."))
 def test_url_reputation_unresolvable_domain_is_not_good(web):
     import socket
     from unittest.mock import patch
@@ -192,3 +188,48 @@ def test_url_reputation_unresolvable_domain_is_not_good(web):
     with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
         res = call_tool("analyze_url_reputation", url="no-such-supplier.invalid", report_mode="full")
     assert res.verdict in ("POOR_REPUTATION", "MODERATE_RISK"), res.text
+
+
+def test_url_reputation_unresolvable_domain_flags(web):
+    import socket
+    from unittest.mock import patch
+
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+        res = call_tool("analyze_url_reputation", url="no-such-supplier.invalid", report_mode="full")
+    assert "Domain does not resolve: no-such-supplier.invalid" in res.text
+    assert "Cannot connect" in res.text
+    assert "AttributeError" not in res.text
+
+
+def _resolves():
+    import socket
+    from unittest.mock import patch
+
+    fake_dns = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.10", 0))]
+    return patch("socket.getaddrinfo", return_value=fake_dns)
+
+
+def test_url_reputation_tls_error_scores_20(web):
+    import ssl
+
+    import httpx
+
+    def handler(request):
+        try:
+            raise ssl.SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] self-signed")
+        except ssl.SSLError as exc:
+            raise httpx.ConnectError(str(exc), request=request) from exc
+
+    web.handler = handler
+    with _resolves():
+        res = call_tool("analyze_url_reputation", url="selfsigned.example.com")
+    # Resolves, TLS fails: the intended +20 risk points -> trust 80.
+    assert "(80/100) — " in res.text, res.text
+    assert "TLS/SSL certificate error — invalid or self-signed" in res.text
+
+
+def test_url_reputation_quick_mode_good_domain(web):
+    web.serve("https://supplier.example.com", b"<html>ok</html>", "text/html", _SECURE_HEADERS)
+    with _resolves():
+        res = call_tool("analyze_url_reputation", url="supplier.example.com")
+    assert "AUTHENTIC" in res.text and "GOOD_REPUTATION" in res.text, res.text
