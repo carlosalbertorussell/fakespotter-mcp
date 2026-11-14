@@ -322,7 +322,7 @@ Antes de S25 solo 2 de las 29 tools tenían tests que verificaban su resultado. 
 
 **CI:**
 - Job nuevo de `docker build` + smoke test: `initialize` + `tools/list` = 29 tools.
-- Pata experimental de Python 3.15 (`continue-on-error`).
+- Job experimental de Python 3.15, solo en ejecución manual (`workflow_dispatch`): en cada PR solo podía mostrar un check rojo.
 - `ci_check.py` verifica los nombres exactos de las 29 tools.
 
 **Configuración y docs:**

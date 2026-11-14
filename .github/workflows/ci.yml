@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual runs also execute the experimental Python 3.15 job (see `py315`).
+  workflow_dispatch:
 # Least privilege: every job only checks out the repo.
 permissions:
   contents: read
@@ -22,24 +24,45 @@ jobs:
     name: install + arranque + inventario de tools
     runs-on: ubuntu-latest
     needs: docs-sync
-    # 3.15 is experimental: today `pip install` fails there because pymupdf>=2
-    # depends on onnxruntime, which has no cp315 wheels yet (and scikit-image,
-    # pulled in by passporteye, has to be built from source). Its failures do
-    # not fail the workflow; promote it to the main list once it goes green.
-    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.13", "3.14"]
-        experimental: [false]
-        include:
-          - python-version: "3.15"
-            experimental: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Versiones resueltas
+        run: pip list
+      - name: Arranque e inventario de tools
+        run: python scripts/ci_check.py
+      - name: Regression tests (neural wiring + statistical fallback)
+        run: python scripts/regression_test.py
+      - name: Real-library tool tests (pytest, offline, separate process)
+        run: python -m pytest -ra
+
+  # Python 3.15 canary: manual runs only (Actions → CI → Run workflow).
+  # Today `pip install` fails on 3.15 because pymupdf>=2 depends on onnxruntime,
+  # which has no cp315 wheels yet; scikit-image (via passporteye) has none
+  # either. On every PR this job could only show a red check, so it doesn't run
+  # there. Once 3.15 installs and passes, move "3.15" into `arranque`'s matrix
+  # (and see Dependabot #88 for the Docker base image).
+  py315:
+    name: install + arranque + inventario de tools (3.15, experimental)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: docs-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
           allow-prereleases: true
       - name: Instalar dependencias
         run: |
