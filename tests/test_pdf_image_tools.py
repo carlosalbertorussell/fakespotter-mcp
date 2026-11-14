@@ -116,25 +116,54 @@ def test_metadata_rejects_non_pdf(web):
     assert res.text == "[FakeSpotter Error] File is not a PDF (magic bytes check failed)"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: pdf_meta_tools._parse_pdf_date slices the date to len(format string) instead of "
-    "the date length, so D:20250301101500+00'00' parses as 10:01:05 and the UTC offset is "
-    "dropped (D:...-03'00' is not converted to UTC)."))
 @pytest.mark.parametrize("raw,shown", [
     ("D:20250301101500+00'00'", "2025-03-01 10:15:00 UTC"),
     ("D:20250301101500-03'00'", "2025-03-01 13:15:00 UTC"),
+    ("D:20250301101500+05'30'", "2025-03-01 04:45:00 UTC"),
+    ("D:20250301101500Z", "2025-03-01 10:15:00 UTC"),
+    ("D:20250301101500", "2025-03-01 10:15:00 UTC"),
+    ("D:202503011015", "2025-03-01 10:15:00 UTC"),
+    ("D:20250301", "2025-03-01 00:00:00 UTC"),
 ])
 def test_pdf_date_time_and_offset_parsed(web, raw, shown):
     res = _meta(web, _pdf({**CONSISTENT, "creationDate": raw, "modDate": raw}))
     assert f"CreationDate: {shown}" in res.text, res.text
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: _parse_pdf_date cannot parse ISO-8601 XMP dates (same slicing bug), so the XMP "
-    "CreateDate vs PDF CreationDate cross-check never runs."))
+def test_pdf_date_offsets_compared_in_utc(web):
+    # 10:15 at -03:00 is 13:15 UTC: a ModDate of 12:15 UTC is BEFORE creation.
+    res = _meta(web, _pdf({**CONSISTENT, "creationDate": "D:20250301101500-03'00'",
+                           "modDate": "D:20250228121500Z"}))
+    assert "ModDate is BEFORE CreationDate" in res.text, res.text
+
+
 def test_xmp_create_date_mismatch_is_flagged(web):
     res = _meta(web, _pdf(CONSISTENT, xmp=_xmp("2023-01-10T09:00:00+00:00")))
     assert "XMP CreateDate" in res.text and "metadata inconsistency" in res.text, res.text
+
+
+@pytest.mark.parametrize("xmp_date", [
+    "2025-03-01T10:15:00+00:00",
+    "2025-03-01T10:15:00Z",
+    "2025-03-01T07:15:00-03:00",   # same instant, different offset
+    "2025-03-01T10:15:00.000Z",
+])
+def test_xmp_create_date_consistent_is_not_flagged(web, xmp_date):
+    res = _meta(web, _pdf(CONSISTENT, xmp=_xmp(xmp_date)))
+    assert res.verdict == "METADATA_CONSISTENT", res.text
+    assert "XMP CreateDate" not in res.text
+
+
+def test_xmp_attribute_form_is_cross_checked(web):
+    xmp = (
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+        'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        '<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" '
+        'xmp:CreateDate="2023-01-10T09:00:00Z"/>'
+        "</rdf:RDF></x:xmpmeta>"
+    )
+    res = _meta(web, _pdf(CONSISTENT, xmp=xmp))
+    assert "XMP CreateDate (2023-01-10)" in res.text, res.text
 
 
 # ---------------------------------------------------------------------------
