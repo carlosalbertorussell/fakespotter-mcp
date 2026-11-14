@@ -85,17 +85,18 @@ def _parse_td3(line1: str, line2: str) -> tuple[str, list[tuple[bool, str]], dic
     meta["surname"]    = parts[0].replace("<", " ").strip()
     meta["given_names"]= parts[1].replace("<", " ").strip() if len(parts) > 1 else ""
 
-    # Line 2 fields
-    doc_number   = line2[0:9]
-    doc_check    = line2[9]
-    nationality  = line2[10:13].replace("<", "")
-    dob          = line2[13:19]
-    dob_check    = line2[19]
-    sex          = line2[20]
-    expiry       = line2[21:27]
-    expiry_check = line2[27]
-    optional     = line2[28:42]
-    comp_check   = line2[42]
+    # Line 2 fields (ICAO 9303 Part 4; 1-based positions in comments)
+    doc_number   = line2[0:9]     # 1-9
+    doc_check    = line2[9]       # 10
+    nationality  = line2[10:13].replace("<", "")  # 11-13
+    dob          = line2[13:19]   # 14-19
+    dob_check    = line2[19]      # 20
+    sex          = line2[20]      # 21
+    expiry       = line2[21:27]   # 22-27
+    expiry_check = line2[27]      # 28
+    optional     = line2[28:42]   # 29-42 personal number / optional data
+    opt_check    = line2[42]      # 43
+    comp_check   = line2[43]      # 44
 
     meta["document_number"] = doc_number.replace("<", "")
     meta["nationality"]     = nationality
@@ -107,8 +108,13 @@ def _parse_td3(line1: str, line2: str) -> tuple[str, list[tuple[bool, str]], dic
     checks.append(_verify_field(doc_number, doc_check, "Document number"))
     checks.append(_verify_field(dob, dob_check, "Date of birth"))
     checks.append(_verify_field(expiry, expiry_check, "Expiry date"))
-    # Composite: doc number field (0-9) + optional (28-41) + DOB (13-19) + expiry (21-27) + optional (28-41)
-    composite_field = line2[0:10] + line2[28:42] + line2[13:20] + line2[21:28] + line2[28:42]
+    # Personal number: when the field is all fillers its check digit may be '<'.
+    if set(optional) == {"<"} and opt_check == "<":
+        checks.append((True, "Personal number: ✓ empty (filler check digit)"))
+    else:
+        checks.append(_verify_field(optional, opt_check, "Personal number"))
+    # Composite (position 44): positions 1-10, 14-20 and 22-43 of line 2.
+    composite_field = line2[0:10] + line2[13:20] + line2[21:43]
     checks.append(_verify_field(composite_field, comp_check, "Composite check"))
 
     return "TD3_PASSPORT", checks, meta
@@ -126,8 +132,17 @@ def _parse_td1(line1: str, line2: str, line3: str) -> tuple[str, list[tuple[bool
 
     meta["doc_type"]  = line1[0]
     meta["country"]   = line1[2:5].replace("<", "")
+    # Line 1: positions 6-14 document number, 15 check digit, 16-30 optional.
     doc_number = line1[5:14]
     doc_check  = line1[14]
+    if doc_check == "<":
+        # ICAO 9303 Part 5: a document number longer than 9 characters
+        # continues in the optional field (positions 16+), followed by its
+        # check digit and a filler; position 15 then holds '<'.
+        extension = line1[15:30].split("<", 1)[0]
+        if len(extension) >= 2:
+            doc_number = doc_number + extension[:-1]
+            doc_check  = extension[-1]
     meta["document_number"] = doc_number.replace("<", "")
 
     dob         = line2[0:6]
@@ -151,6 +166,8 @@ def _parse_td1(line1: str, line2: str, line3: str) -> tuple[str, list[tuple[bool
     checks.append(_verify_field(doc_number, doc_check, "Document number"))
     checks.append(_verify_field(dob, dob_check, "Date of birth"))
     checks.append(_verify_field(expiry, expiry_check, "Expiry date"))
+    # Composite (line 2 position 30): line 1 positions 6-30, line 2 positions
+    # 1-7, 9-15 and 19-29.
     composite = line1[5:30] + line2[0:7] + line2[8:15] + line2[18:29]
     checks.append(_verify_field(composite, comp_check, "Composite check"))
 

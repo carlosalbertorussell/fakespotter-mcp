@@ -237,13 +237,41 @@ def _mutate(lines: list[str], line: int, pos: int) -> list[str]:
     return out
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: mrz_tools._parse_td3 reads the composite check digit from position 43 of line 2 "
-    "(index 42, the personal-number check digit) and builds the composite string with the "
-    "optional field twice and in the wrong order; the ICAO 9303 specimen passport fails."))
 def test_td3_specimen_valid():
     res = _mrz(TD3)
     assert res.verdict == "MRZ_VALID", res.text
+    assert "Composite check: ✓ checksum valid" in res.text
+    assert "Personal number: ✓ checksum valid" in res.text
+
+
+def _td3_with(personal14: str, personal_check: str) -> list[str]:
+    """TD3 specimen with a different personal-number field and recomputed composite."""
+    l2 = TD3[1][:28] + personal14 + personal_check
+    return [TD3[0], l2 + str(_icao_check(l2[0:10] + l2[13:20] + l2[21:43]))]
+
+
+def test_td3_empty_personal_number_with_filler_check_is_valid():
+    res = _mrz(_td3_with("<" * 14, "<"))
+    assert res.verdict == "MRZ_VALID", res.text
+
+
+def test_td3_personal_number_changed_with_recomputed_composite_fails():
+    # Composite recomputed over the forged field, so only the personal-number check catches it.
+    lines = _td3_with("ZE184226C<<<<<", "1")
+    assert int(lines[1][42]) != _icao_check(lines[1][28:42])
+    res = _mrz(lines)
+    assert res.verdict == "MRZ_CHECKSUM_FAILED", res.text
+    assert "Personal number: ✗ checksum FAILED" in res.text
+    assert "Composite check: ✓ checksum valid" in res.text
+
+
+@pytest.mark.parametrize("pos", [3, 5, 14, 17, 22, 30])
+def test_td3_changed_composite_covered_digit_fails(pos):
+    # A +1 change to one digit shifts the weighted sum by 7, 3 or 1, never 0 mod 10,
+    # so the field check and the composite check must both catch it.
+    res = _mrz(_mutate(TD3, 1, pos))
+    assert res.verdict == "MRZ_CHECKSUM_FAILED", res.text
+    assert "Composite check: ✗ checksum FAILED" in res.text, res.text
 
 
 def test_td3_specimen_fields_parsed():
@@ -288,6 +316,30 @@ def test_td1_changed_check_digit_fails(line, pos, label):
     res = _mrz(_mutate(TD1, line, pos))
     assert res.verdict == "MRZ_CHECKSUM_FAILED", res.text
     assert f"{label}: ✗ checksum FAILED" in res.text
+
+
+def _td1_long_number(number: str) -> list[str]:
+    """TD1 with a >9-character document number (ICAO 9303 Part 5, note j)."""
+    ext = number[9:] + str(_icao_check(number))
+    l1 = ("I<UTO" + number[:9] + "<" + ext + "<").ljust(30, "<")
+    l2 = TD1[1][:29]
+    l2 += str(_icao_check(l1[5:30] + l2[0:7] + l2[8:15] + l2[18:29]))
+    return [l1, l2, TD1[2]]
+
+
+def test_td1_long_document_number_is_valid():
+    lines = _td1_long_number("D23145890734")
+    res = _mrz(lines)
+    assert res.verdict == "MRZ_VALID", res.text
+    assert "Document number: ✓ checksum valid" in res.text
+
+
+def test_td1_long_document_number_changed_fails():
+    lines = _td1_long_number("D23145890734")
+    lines[0] = lines[0][:16] + ("9" if lines[0][16] != "9" else "8") + lines[0][17:]
+    res = _mrz(lines)
+    assert res.verdict == "MRZ_CHECKSUM_FAILED", res.text
+    assert "Document number: ✗ checksum FAILED" in res.text
 
 
 def test_td1_changed_data_digit_fails():
