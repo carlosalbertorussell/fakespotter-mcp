@@ -120,14 +120,20 @@ def _check_typosquatting(domain: str) -> list[tuple[int, str]]:
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+# Quick-mode label for every verdict the three network tools can return.
+# MODERATE_RISK (and anything unknown) stays "uncertain - manual review".
+_FAKE_VERDICTS = frozenset({"HIGH_PHISHING_RISK", "HIGH_SPOOFING_RISK", "POOR_REPUTATION"})
+_AUTHENTIC_VERDICTS = frozenset({"LOW_RISK", "HEADERS_CLEAN", "GOOD_REPUTATION"})
+
+
 def _quick(verdict: str, score: int, flags: list[str], lang: str) -> str:
     label = (
-        i18n.t("verdict_fake", lang)      if "PHISHING" in verdict or "MALICIOUS" in verdict
-        else i18n.t("verdict_authentic", lang) if "SAFE" in verdict or "LEGITIMATE" in verdict
+        i18n.t("verdict_fake", lang)      if verdict in _FAKE_VERDICTS
+        else i18n.t("verdict_authentic", lang) if verdict in _AUTHENTIC_VERDICTS
         else i18n.t("verdict_uncertain", lang)
     )
     flag_str = " | ".join(flags) if flags else i18n.t("no_flags", lang)
-    return f"{label} ({score}/100) — {flag_str}"
+    return f"{label} ({score}/100) — {verdict} | {flag_str}"
 
 
 # ---------------------------------------------------------------------------

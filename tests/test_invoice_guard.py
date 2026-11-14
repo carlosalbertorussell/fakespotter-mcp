@@ -72,21 +72,28 @@ def test_eight_hops_is_not_flagged():
     assert res.verdict == "HEADERS_CLEAN"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: quick mode (the default) maps verdicts through network_tools._quick, which only "
-    "knows PHISHING/MALICIOUS/SAFE/LEGITIMATE. HEADERS_CLEAN is reported as "
-    "'UNCERTAIN - MANUAL REVIEW REQUIRED' and the verdict string never appears."))
 def test_quick_mode_clean_headers_reported_authentic():
     res = _headers(CLEAN_HEADERS[0], mode="quick")
     assert "AUTHENTIC" in res.text
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: quick mode reports HIGH_SPOOFING_RISK as 'UNCERTAIN' instead of FAKE "
-    "(network_tools._quick does not recognise the email verdicts)."))
 def test_quick_mode_spoofed_headers_reported_fake():
     res = _headers(SPOOFED_HEADERS[0], mode="quick")
     assert "FAKE" in res.text
+
+
+@pytest.mark.parametrize("raw", CLEAN_HEADERS + SPOOFED_HEADERS)
+def test_quick_mode_names_the_full_mode_verdict(raw):
+    full = _headers(raw)
+    quick = _headers(raw, mode="quick")
+    assert f"— {full.verdict} |" in quick.text, quick.text
+
+
+def test_quick_mode_moderate_risk_is_uncertain():
+    raw = ("Authentication-Results: spf=softfail dkim=none dmarc=pass\n"
+           "From: AP <ap@small-co.com>\nReturn-Path: <ap@small-co.com>")
+    res = _headers(raw, mode="quick")
+    assert "UNCERTAIN" in res.text and "MODERATE_RISK" in res.text, res.text
 
 
 # ---------------------------------------------------------------------------
