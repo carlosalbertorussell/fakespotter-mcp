@@ -4,8 +4,9 @@ FROM python:3.14-slim-bookworm
 # Evitar logs de caché y buffers
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV FAKESPOTTER_TRANSPORT=streamable_http
-ENV FAKESPOTTER_PORT=8000
+# src/server.py serves streamable HTTP on $PORT (its own default is 8081).
+# Cloud Run injects PORT at runtime, which overrides this default.
+ENV PORT=8000
 ENV FAKESPOTTER_TMP=/tmp/fakespotter
 
 # Instalar solo lo estrictamente necesario

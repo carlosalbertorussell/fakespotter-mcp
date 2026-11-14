@@ -43,7 +43,6 @@ EXPECTED_TOOL_NAMES = frozenset({
   "verify_video_metadata",
 })
 _ROOT = Path(__file__).resolve().parent.parent
-os.environ.setdefault("FAKESPOTTER_TRANSPORT", "stdio")
 os.environ.setdefault("FAKESPOTTER_TMP", "/tmp/fakespotter")
 Path(os.environ["FAKESPOTTER_TMP"]).mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(_ROOT / "src"))

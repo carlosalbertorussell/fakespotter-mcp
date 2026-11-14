@@ -61,8 +61,8 @@ jobs:
       - name: Build image
         run: docker build -t fakespotter:ci .
       - name: Start container
-        # server.py listens on $PORT (default 8081), not on FAKESPOTTER_PORT;
-        # Cloud Run injects PORT, so set it the same way here.
+        # server.py listens on $PORT (default 8081; the image sets 8000).
+        # Cloud Run injects PORT, so pass it the same way here.
         run: docker run -d --name fakespotter -e PORT=8000 -p 8000:8000 fakespotter:ci
       - name: Answers MCP initialize and lists 29 tools
         run: |
