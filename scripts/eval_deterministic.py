@@ -11,7 +11,14 @@ httpx.MockTransport); analyze_url_reputation is evaluated live (DNS + HTTP).
 
 Usage:
     cd /path/to/fakespotter-mcp
-    python scripts/eval_deterministic.py
+    python scripts/eval_deterministic.py              # all 4 tools (needs network)
+    python scripts/eval_deterministic.py --skip-live  # offline tools only; the
+        analyze_url_reputation row is written as "not measured"
+
+Run the live step only from a host with direct Internet access: behind an
+egress proxy, unreachable domains come back as a proxy 502 (httpx.ProxyError)
+and established sites can answer the proxy's own status codes, so the
+numbers describe the proxy, not the tool.
 
 Writes results to docs/accuracy.md
 No running MCP server required.
@@ -43,6 +50,7 @@ EVAL_HOST = "https://eval.fakespotter.test"
 class EvalResult:
     tool: str
     corpus_size: int
+    measured: bool = True
     tp: int = 0
     tn: int = 0
     fp: int = 0
@@ -227,10 +235,11 @@ async def eval_analyze_url_reputation() -> EvalResult:
     r.notes = (
         "Live DNS+HTTP -- not a static corpus; re-run reflects current state. "
         "Known FP source: established domains missing 2+ of 3 security headers "
-        "(x-frame-options, x-content-type-options, strict-transport-security) score +10. "
-        "MODERATE_RISK threshold raised to 35 (fixed in S10) — established domains now clear cleanly. "
-        "Known FN source: a non-resolving domain scores +30 for DNS and nothing for the failed HTTP "
-        "fetch, below the 35-point MODERATE_RISK threshold."
+        "(x-frame-options, x-content-type-options, strict-transport-security) score +10; "
+        "with an HTTP 4xx/5xx (+20) that is 30, still under the 35-point MODERATE_RISK threshold. "
+        "A non-resolving domain scores +30 for DNS plus +10 for the failed connection "
+        "(MODERATE_RISK). Before the httpx exception fix, every failed fetch made the tool "
+        "return an AttributeError instead of a verdict."
     )
     r.notes += _error_note("analyze_url_reputation")
     return r
@@ -244,6 +253,9 @@ def print_table(results: list[EvalResult]) -> None:
     print(f"\n{'Tool':<35} {'N':>5} {'FP%':>7} {'FN%':>7} {'Acc%':>7}")
     print("-" * 65)
     for r in results:
+        if not r.measured:
+            print(f"{r.tool:<35} {'-':>5} {'not measured':>23}")
+            continue
         print(f"{r.tool:<35} {r.corpus_size:>5} {r.fp_rate:>6.1f}% {r.fn_rate:>6.1f}% {r.accuracy:>6.1f}%")
 
 
@@ -262,6 +274,9 @@ def write_accuracy_md(results: list[EvalResult], path: Path) -> None:
         "|------|---|---------|---------|----------|",
     ]
     for r in results:
+        if not r.measured:
+            lines.append(f"| `{r.tool}` | — | not measured | not measured | not measured |")
+            continue
         lines.append(f"| `{r.tool}` | {r.corpus_size} | {r.fp_rate:.1f}% | {r.fn_rate:.1f}% | {r.accuracy:.1f}% |")
 
     lines += ["", "## Detail and methodology", ""]
@@ -269,7 +284,8 @@ def write_accuracy_md(results: list[EvalResult], path: Path) -> None:
         lines += [
             f"### `{r.tool}`",
             "",
-            f"N={r.corpus_size} &nbsp;.&nbsp; TP={r.tp} TN={r.tn} FP={r.fp} FN={r.fn}",
+            (f"N={r.corpus_size} &nbsp;.&nbsp; TP={r.tp} TN={r.tn} FP={r.fp} FN={r.fn}"
+             if r.measured else "**Not measured in this run.**"),
             "",
             r.notes,
             "",
@@ -288,6 +304,20 @@ def write_accuracy_md(results: list[EvalResult], path: Path) -> None:
     print(f"\nWrote {path}")
 
 
+def not_measured_url_reputation() -> EvalResult:
+    r = EvalResult("analyze_url_reputation", corpus_size=0, measured=False)
+    r.notes = (
+        "Skipped (--skip-live): this step needs direct DNS + HTTPS access to live sites, which "
+        "was not available when this file was generated. No FP/FN figure is claimed. "
+        "Offline, the scoring rules are covered by tests/test_invoice_guard.py "
+        "(good domain -> GOOD_REPUTATION, unresolvable + unreachable -> MODERATE_RISK, "
+        "TLS failure +20). Earlier versions of this file reported 0% FP/FN for this tool; "
+        "those numbers did not come from the real tool, which at the time returned "
+        "'[FakeSpotter Error] AttributeError' on every failed fetch."
+    )
+    return r
+
+
 async def main() -> None:
     print("FakeSpotter -- eval_deterministic.py")
     print("=" * 65)
@@ -298,8 +328,12 @@ async def main() -> None:
     results.append(await eval_analyze_file_metadata())
     print("[3/4] check_email_headers...")
     results.append(await eval_check_email_headers())
-    print("[4/4] analyze_url_reputation (live)...")
-    results.append(await eval_analyze_url_reputation())
+    if "--skip-live" in sys.argv[1:]:
+        print("[4/4] analyze_url_reputation (live)... skipped (--skip-live)")
+        results.append(not_measured_url_reputation())
+    else:
+        print("[4/4] analyze_url_reputation (live)...")
+        results.append(await eval_analyze_url_reputation())
     print_table(results)
     docs_dir = Path(__file__).parent.parent / "docs"
     write_accuracy_md(results, docs_dir / "accuracy.md")

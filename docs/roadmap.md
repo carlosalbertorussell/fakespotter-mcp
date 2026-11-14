@@ -54,6 +54,8 @@ Valida firmas digitales PKCS#7/CMS embebidas en PDFs (Adobe Acrobat, DocuSign, c
 
 **Nueva dep:** `pyhanko>=0.20,<1` · `cryptography>=42,<44`
 
+> **Nota (2026-11):** hasta la migración a mcp 2.x esta tool devolvía `SIGNATURE_INVALID` para todo PDF firmado (llamaba a la validación síncrona de pyHanko dentro del event loop). Corregido y cubierto por `tests/test_signatures_timestamps.py`; límites vigentes (trust roots, LTV) en README → Declared Limits.
+
 ---
 
 ### S13 — `validate_bank_account` · tool #22
@@ -219,6 +221,8 @@ Verifica tokens RFC 3161 emitidos por una TSA (Timestamp Authority). Usa `pyhank
 Input: `pdf_url` (extrae TSTs embebidos), `tsr_url` (archivo .tsr), `tsr_hex` (token inline).
 Verdicts: `TIMESTAMP_VALID` · `TIMESTAMP_INVALID` · `TIMESTAMP_EXPIRED` · `NO_TIMESTAMP_FOUND`
 **Sin dependencias nuevas.**
+
+> **Nota (2026-11):** hasta la migración a mcp 2.x esta tool fallaba con `ImportError` ante cualquier token y nunca encontraba los timestamps embebidos en un PDF. Corregido y cubierto por `tests/test_signatures_timestamps.py`. En el mismo cambio se corrigieron `validate_bank_account` (auto-detección, dígitos CBU/CVU), `validate_mrz` (dígito compuesto TD3), `analyze_pdf_metadata` (fechas), `correlate_documents` (`hamming_threshold`), `analyze_url_reputation` y el modo quick de las tools de red.
 
 ---
 

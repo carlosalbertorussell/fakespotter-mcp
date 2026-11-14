@@ -147,7 +147,17 @@ A forensic provider that overreaches is a liability, not a tool. The table below
 | `verify_document_integrity` | 0% FP, 0% FN by SHA-256 construction — unless the attacker also controls the reference hash |
 | `analyze_file_metadata` | File-type mismatch: deterministic. Entropy weight raised from 15→25 pts in S10 — FN rate 0% on current corpus. |
 | `check_email_headers` | Parses MTA pre-evaluated results. Does not perform live DNS lookups. Senders without DMARC score MODERATE\_RISK as a false positive. |
-| `analyze_url_reputation` | Threshold raised from 25→35 pts in S10 — FP rate 0% on current corpus. Established domains missing security headers no longer trigger false positives. |
+| `analyze_url_reputation` | Live DNS/HTTP; FP/FN **not currently measured** (see [docs/accuracy.md](docs/accuracy.md) — the earlier 0% figure did not come from the real tool). Until the httpx exception fix, every failed fetch returned an error instead of a verdict. A TLS certificate error alone (+20) still scores GOOD\_REPUTATION; an unresolvable, unreachable domain scores MODERATE\_RISK. Behind an egress proxy, an unreachable host surfaces as a proxy error, which is flagged but not scored. |
+
+### Signature, timestamp and identity checks
+
+| Tool | Known limit |
+|------|-------------|
+| `verify_digital_signature` | Chain of trust is checked against the host OS trust store (with certificate fetching); there is no parameter to supply trust roots, so signatures from CAs outside that store (e.g. EU qualified / AATL roots on a slim container) come out SIGNATURE\_INVALID. Validity is evaluated at the current time with no long-term validation (LTV) data, so a certificate that has since expired gives SIGNATURE\_EXPIRED even if the signature was made while it was valid. Revocation is soft-fail. Incremental updates after signing (ENTIRE\_REVISION coverage) are not diff-analysed or reported. |
+| `verify_rfc3161_timestamp` | Same trust-root and LTV limits as above (an expired TSA certificate gives TIMESTAMP\_EXPIRED; the flags say whether it expired before or after the stamping time). A standalone `.tsr` is only tied to a document when `document_hash` (SHA-256) is supplied. |
+| `validate_bank_account` | Checksums only: a valid IBAN/CBU/CVU/CLABE need not exist or belong to the payee. CBU and CVU are structurally identical, so `format="auto"` reports 22-digit numbers as CBU. |
+| `validate_mrz` | Checksums only (ICAO 9303 weights 7-3-1): they catch every single-digit change, but not every character substitution (e.g. `L` → `1` in the document number can leave the sum mod 10 unchanged). TD2 is not supported. |
+| `analyze_pdf_metadata` | Metadata is attacker-controlled. Dates without a UTC offset are treated as UTC. |
 
 ### AI detection tools (neural ensemble)
 
@@ -239,7 +249,10 @@ Layer 3 — Integrity   Every report is HMAC-SHA256 signed with the user's
 
 ## 🔧 Self-Hosting
 
-### Local (stdio — Claude Desktop)
+### Local
+
+`src/server.py` serves MCP over streamable HTTP at `http://localhost:$PORT/mcp`
+(`PORT` defaults to 8081; the Docker image sets 8000).
 
 ```bash
 git clone https://github.com/carlosalbertorussell/fakespotter-mcp
