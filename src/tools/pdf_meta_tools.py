@@ -27,7 +27,7 @@ No new dependencies — uses PyMuPDF (added in S11).
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
@@ -42,32 +42,61 @@ from utils.reporter import ForensicReporter
 # Helpers
 # ---------------------------------------------------------------------------
 
+# PDF 32000-1 §7.9.4: D:YYYYMMDDHHmmSSOHH'mm' — everything after YYYY is
+# optional, O is +, - or Z, and the apostrophes are often omitted.
+_PDF_DATE_RE = re.compile(
+    r"^(?:D:)?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?"
+    r"(?:([Zz+\-])(?:(\d{2})'?(?:(\d{2})'?)?)?)?$"
+)
+# ISO 8601 / XMP (W3C-DTF): YYYY[-MM[-DD[Thh:mm[:ss[.s]][TZD]]]]
+_ISO_DATE_RE = re.compile(
+    r"^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d+))?)?"
+    r"(Z|z|[+\-]\d{2}(?::?\d{2})?)?)?)?)?$"
+)
+
+
+def _build_utc(year, month, day, hour, minute, second, micro, offset_minutes) -> datetime | None:
+    try:
+        dt = datetime(int(year), int(month or 1), int(day or 1), int(hour or 0),
+                      int(minute or 0), int(second or 0), micro, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return dt - timedelta(minutes=offset_minutes)
+
+
 def _parse_pdf_date(date_str: str) -> datetime | None:
-    """Parse PDF date format: D:YYYYMMDDHHmmSSOHH'mm' or ISO variants."""
+    """Parse a PDF date (D:YYYYMMDDHHmmSSOHH'mm') or an ISO 8601 / XMP date.
+
+    Returns an aware datetime in UTC (local times are converted using their
+    offset; a date without an offset is taken as UTC), or None if the string
+    is not a valid date.
+    """
     if not date_str:
         return None
-    # Strip D: prefix
-    s = date_str.strip().lstrip("D:").lstrip("d:")
-    # Try formats in order of specificity
-    formats = [
-        "%Y%m%d%H%M%S%z",  # 20220315143022+0200
-        "%Y%m%d%H%M%S",    # 20220315143022
-        "%Y%m%d%H%M",      # 202203151430
-        "%Y%m%d",          # 20220315
-        "%Y-%m-%dT%H:%M:%S%z",  # ISO
-        "%Y-%m-%d",
-    ]
-    # Normalise timezone notation: +02'00' → +0200
-    s = re.sub(r"([+-]\d{2})'(\d{2})'?$", r"\1\2", s)
-    s = re.sub(r"Z$", "+0000", s)
-    for fmt in formats:
-        try:
-            dt = datetime.strptime(s[:len(fmt)], fmt)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except ValueError:
-            continue
+    s = date_str.strip()
+
+    m = _PDF_DATE_RE.match(s)
+    if m:
+        year, month, day, hour, minute, second, sign, off_h, off_m = m.groups()
+        offset = 0
+        if sign in ("+", "-") and off_h:
+            offset = int(off_h) * 60 + int(off_m or 0)
+            if sign == "-":
+                offset = -offset
+        return _build_utc(year, month, day, hour, minute, second, 0, offset)
+
+    m = _ISO_DATE_RE.match(s)
+    if m:
+        year, month, day, hour, minute, second, frac, tz = m.groups()
+        micro = int((frac or "0")[:6].ljust(6, "0"))
+        offset = 0
+        if tz and tz not in ("Z", "z"):
+            digits = tz[1:].replace(":", "")
+            offset = int(digits[:2]) * 60 + int(digits[2:4] or 0)
+            if tz[0] == "-":
+                offset = -offset
+        return _build_utc(year, month, day, hour, minute, second, micro, offset)
+
     return None
 
 
@@ -99,9 +128,9 @@ def _producer_category(producer: str) -> str:
 
 def _extract_pdf_metadata(pdf_bytes: bytes) -> dict:
     """Extract all forensically relevant metadata from a PDF using PyMuPDF."""
-    import fitz  # PyMuPDF
+    import pymupdf
 
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     meta = doc.metadata or {}
     trailer = doc.pdf_trailer() or {}
     perm = doc.permissions
@@ -146,10 +175,14 @@ def _extract_pdf_metadata(pdf_bytes: bytes) -> dict:
         result["xmp_available"] = bool(xmp)
         if xmp:
             # Extract XMP CreateDate and MetadataDate
-            create_match = re.search(r"<xmp:CreateDate>(.*?)</xmp:CreateDate>", xmp)
-            modify_match = re.search(r"<xmp:ModifyDate>(.*?)</xmp:ModifyDate>", xmp)
-            result["xmp_create_date"] = create_match.group(1) if create_match else ""
-            result["xmp_modify_date"] = modify_match.group(1) if modify_match else ""
+            # (element form <xmp:CreateDate>..</xmp:CreateDate> or attribute
+            # form xmp:CreateDate="..." on rdf:Description)
+            def _xmp_value(tag: str) -> str:
+                m = (re.search(rf"<xmp:{tag}>\s*(.*?)\s*</xmp:{tag}>", xmp, re.S)
+                     or re.search(rf"\bxmp:{tag}\s*=\s*[\"']([^\"']*)[\"']", xmp))
+                return m.group(1).strip() if m else ""
+            result["xmp_create_date"] = _xmp_value("CreateDate")
+            result["xmp_modify_date"] = _xmp_value("ModifyDate")
     except Exception:
         result["xmp_available"] = False
 
@@ -341,7 +374,7 @@ def register_analyze_pdf_metadata(mcp: MCPServer) -> None:
             except ImportError:
                 return (
                     "[FakeSpotter Error] PyMuPDF not installed. "
-                    "Add pymupdf>=1.24,<2 to requirements.txt."
+                    "Add pymupdf>=2.1,<3 to requirements.txt."
                 )
 
             verdict, score, flags = _analyze_metadata(raw_meta)

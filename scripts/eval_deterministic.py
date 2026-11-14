@@ -3,30 +3,54 @@
 FakeSpotter -- eval_deterministic.py
 Evaluates FP/FN rates for the 4 deterministic Invoice Guard tools.
 
+Every verdict comes from the REAL tool in src/tools/, called through the
+public MCP client API (tests/mcp_client.py), so this report cannot drift
+from the code it measures. verify_document_integrity, analyze_file_metadata
+and check_email_headers are evaluated offline (fixture bytes are served via
+httpx.MockTransport); analyze_url_reputation is evaluated live (DNS + HTTP).
+
 Usage:
     cd /path/to/fakespotter-mcp
-    python scripts/eval_deterministic.py
+    python scripts/eval_deterministic.py              # all 4 tools (needs network)
+    python scripts/eval_deterministic.py --skip-live  # offline tools only; the
+        analyze_url_reputation row is written as "not measured"
+
+Run the live step only from a host with direct Internet access: behind an
+egress proxy, unreachable domains come back as a proxy 502 (httpx.ProxyError)
+and established sites can answer the proxy's own status codes, so the
+numbers describe the proxy, not the tool.
 
 Writes results to docs/accuracy.md
-No MCP server required.
+No running MCP server required.
 """
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import math
-import os
-import re
-import socket
 import datetime
+import hashlib
+import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT / "src"))
+sys.path.insert(0, str(_ROOT))
+os.environ.setdefault("FAKESPOTTER_TMP", "/tmp/fakespotter")
+Path(os.environ["FAKESPOTTER_TMP"]).mkdir(parents=True, exist_ok=True)
+
+from tests.fixtures.email_samples import CLEAN_HEADERS, SPOOFED_HEADERS  # noqa: E402
+from tests.mcp_client import acall_tool  # noqa: E402
+from tests.offline_http import offline_http  # noqa: E402
+
+EVAL_HOST = "https://eval.fakespotter.test"
 
 
 @dataclass
 class EvalResult:
     tool: str
     corpus_size: int
+    measured: bool = True
     tp: int = 0
     tn: int = 0
     fp: int = 0
@@ -49,43 +73,65 @@ class EvalResult:
         return ((self.tp + self.tn) / t * 100) if t else 0.0
 
 
+TOOL_ERRORS: dict[str, list[str]] = {}
+
+
+async def _verdict(tool: str, **params) -> str:
+    """Run a real tool in full mode and return the certificate's VERDICT.
+
+    A tool that answers with an error instead of a verdict is scored as a
+    miss (FP for a clean sample, FN for a bad one) and the error is reported
+    in the notes, rather than aborting the whole evaluation.
+    """
+    res = await acall_tool(tool, report_mode="full", **params)
+    if res.verdict is None:
+        TOOL_ERRORS.setdefault(tool, []).append(res.text.strip().splitlines()[0][:160])
+        return "TOOL_ERROR"
+    return res.verdict
+
+
+def _error_note(tool: str) -> str:
+    errors = TOOL_ERRORS.get(tool, [])
+    if not errors:
+        return ""
+    return (f" Tool returned an error instead of a verdict on {len(errors)} sample(s), "
+            f"scored as misses: `{errors[0]}`.")
+
+
 # ---------------------------------------------------------------------------
 # Tool 1: verify_document_integrity
 # ---------------------------------------------------------------------------
 
-def eval_verify_document_integrity(n: int = 100) -> EvalResult:
+async def eval_verify_document_integrity(n: int = 100) -> EvalResult:
     r = EvalResult("verify_document_integrity", corpus_size=n * 2)
-    for i in range(n):
-        content = os.urandom(512 + i)
-        sha256 = hashlib.sha256(content).hexdigest()
-        r.tn += 1 if hashlib.sha256(content).hexdigest() == sha256 else 0
-        tampered = bytearray(content)
-        tampered[0] ^= 0xFF
-        r.tp += 1 if hashlib.sha256(bytes(tampered)).hexdigest() != sha256 else 0
+    with offline_http() as web:
+        for i in range(n):
+            content = os.urandom(512 + i)
+            sha256 = hashlib.sha256(content).hexdigest()
+            tampered = bytearray(content)
+            tampered[0] ^= 0xFF
+            url = f"{EVAL_HOST}/doc_{i}.bin"
+
+            web.serve(url, content)
+            v = await _verdict("verify_document_integrity", file_url=url, expected_sha256=sha256)
+            if v == "DOCUMENT_INTACT": r.tn += 1
+            else: r.fp += 1
+
+            web.serve(url, bytes(tampered))
+            v = await _verdict("verify_document_integrity", file_url=url, expected_sha256=sha256)
+            if v == "DOCUMENT_TAMPERED": r.tp += 1
+            else: r.fn += 1
     r.notes = (
         "SHA-256 collision-resistant; 0% FP/FN by mathematical guarantee, "
-        "not by empirical measurement."
+        "not by empirical measurement. Verdicts produced by the real tool."
     )
+    r.notes += _error_note("verify_document_integrity")
     return r
 
 
 # ---------------------------------------------------------------------------
 # Tool 2: analyze_file_metadata
 # ---------------------------------------------------------------------------
-
-MAGIC_TABLE = {
-    b"\xff\xd8\xff": "JPEG",
-    b"\x89PNG\r\n":  "PNG",
-    b"GIF8":            "GIF",
-    b"%PDF":            "PDF",
-    b"PK\x03\x04":   "ZIP",
-}
-
-EXT_MAP = {
-    "jpg": "JPEG", "jpeg": "JPEG",
-    "png": "PNG",  "gif": "GIF",
-    "pdf": "PDF",  "zip": "ZIP",
-}
 
 MAGIC_HEADERS = {
     "JPEG": b"\xff\xd8\xff\xe0" + b"\x00" * 508,
@@ -96,40 +142,7 @@ MAGIC_HEADERS = {
 }
 
 
-def _detect_magic(c: bytes) -> str:
-    for magic, label in MAGIC_TABLE.items():
-        if c[:len(magic)] == magic:
-            return label
-    return "Unknown"
-
-
-def _entropy(c: bytes) -> float:
-    if not c:
-        return 0.0
-    counts = [0] * 256
-    for b in c:
-        counts[b] += 1
-    n = len(c)
-    return -sum((x / n) * math.log2(x / n) for x in counts if x > 0)
-
-
-def _analyze_file(content: bytes, ext: str) -> str:
-    score = 0
-    detected = _detect_magic(content)
-    expected = EXT_MAP.get(ext.lower(), "")
-    if expected and expected.lower() not in detected.lower():
-        score += 40
-    if _entropy(content) > 7.8:
-        score += 25
-    score = min(100, score)
-    if score >= 50:
-        return "SUSPICIOUS_FILE"
-    if score >= 25:
-        return "REVIEW_RECOMMENDED"
-    return "FILE_CLEAN"
-
-
-def eval_analyze_file_metadata() -> EvalResult:
+async def eval_analyze_file_metadata() -> EvalResult:
     r = EvalResult("analyze_file_metadata", corpus_size=0)
 
     clean = [
@@ -141,53 +154,36 @@ def eval_analyze_file_metadata() -> EvalResult:
         (MAGIC_HEADERS["GIF"],  "gif"),
         (b"plain text without magic", "txt"),
         (b"another plain text file",  "csv"),
+        (b"\x00" * 4096,             "bin"),   # zero entropy
     ]
-    for content, ext in clean:
-        r.corpus_size += 1
-        v = _analyze_file(content, ext)
-        if v == "FILE_CLEAN":
-            r.tn += 1
-        else:
-            r.fp += 1
-
-    mismatch = [
+    flagged = [
         (MAGIC_HEADERS["JPEG"], "pdf"),
         (MAGIC_HEADERS["PNG"],  "jpg"),
         (MAGIC_HEADERS["PDF"],  "zip"),
         (MAGIC_HEADERS["ZIP"],  "jpg"),
         (MAGIC_HEADERS["GIF"],  "pdf"),
+        (os.urandom(4096),      "bin"),   # high entropy
     ]
-    for content, ext in mismatch:
-        r.corpus_size += 1
-        v = _analyze_file(content, ext)
-        if v != "FILE_CLEAN":
-            r.tp += 1
-        else:
-            r.fn += 1
 
-    # Entropy corpus
-    for content, ext, expect_flagged in [
-        (os.urandom(4096), "bin", True),   # high entropy
-        (b"\x00" * 4096,  "bin", False),  # zero entropy
-    ]:
-        r.corpus_size += 1
-        v = _analyze_file(content, ext)
-        if expect_flagged:
-            if v != "FILE_CLEAN":
-                r.tp += 1
+    with offline_http() as web:
+        for i, (content, ext) in enumerate(clean + flagged):
+            expect_flagged = i >= len(clean)
+            url = web.serve(f"{EVAL_HOST}/sample_{i}.{ext}", content)
+            r.corpus_size += 1
+            v = await _verdict("analyze_file_metadata", file_url=url)
+            if expect_flagged:
+                if v != "FILE_CLEAN": r.tp += 1
+                else: r.fn += 1
             else:
-                r.fn += 1
-        else:
-            if v == "FILE_CLEAN":
-                r.tn += 1
-            else:
-                r.fp += 1
+                if v == "FILE_CLEAN": r.tn += 1
+                else: r.fp += 1
 
     r.notes = (
         "Magic-byte mismatch detection is deterministic (+40 pts -> REVIEW_RECOMMENDED). "
         "Entropy signal: +25 pts (fixed in S10) — high-entropy file now reaches REVIEW_RECOMMENDED threshold. "
         "FN rate: 0% after fix (was 16.7%)."
     )
+    r.notes += _error_note("analyze_file_metadata")
     return r
 
 
@@ -195,71 +191,23 @@ def eval_analyze_file_metadata() -> EvalResult:
 # Tool 3: check_email_headers
 # ---------------------------------------------------------------------------
 
-def _parse_headers(raw: str) -> str:
-    score = 0
-    spf_r = re.findall(r"spf=(pass|fail|softfail|neutral|none|permerror|temperror)", raw, re.I)
-    spf = spf_r[0].lower() if spf_r else "none"
-    if spf in ("fail", "permerror"):  score += 40
-    elif spf == "softfail":           score += 20
-    elif spf == "none":               score += 15
-
-    dkim_r = re.findall(r"dkim=(pass|fail|none|neutral|permerror|temperror)", raw, re.I)
-    dkim = dkim_r[0].lower() if dkim_r else "none"
-    if dkim == "fail":   score += 35
-    elif dkim == "none": score += 15
-
-    dmarc_r = re.findall(r"dmarc=(pass|fail|none|bestguesspass)", raw, re.I)
-    dmarc = dmarc_r[0].lower() if dmarc_r else "none"
-    if dmarc == "fail":  score += 30
-    elif dmarc == "none": score += 10
-
-    fm = re.search(r"^From:.*?@([\w.\-]+)", raw, re.I | re.M)
-    rm = re.search(r"^Return-Path:.*?@([\w.\-]+)", raw, re.I | re.M)
-    fd = fm.group(1).lower() if fm else ""
-    rd = rm.group(1).lower() if rm else ""
-    if fd and rd and fd != rd:
-        score += 30
-
-    rtm = re.search(r"^Reply-To:.*?@([\w.\-]+)", raw, re.I | re.M)
-    rtd = rtm.group(1).lower() if rtm else ""
-    if rtd and fd and rtd != fd:
-        score += 20
-
-    score = min(100, score)
-    if score >= 60:   return "HIGH_SPOOFING_RISK"
-    elif score >= 35: return "MODERATE_RISK"
-    return "HEADERS_CLEAN"
-
-
-CLEAN_HEADERS = [
-    "Authentication-Results: spf=pass dkim=pass dmarc=pass\nFrom: Billing <billing@supplier.com>\nReturn-Path: <billing@supplier.com>",
-    "Authentication-Results: spf=pass dkim=pass dmarc=pass\nFrom: Accounts <ap@acme.com>\nReturn-Path: <ap@acme.com>\nX-Mailer: MailChimp Mailer",
-    "Authentication-Results: spf=pass dkim=none dmarc=none\nFrom: AP <ap@small-co.com>\nReturn-Path: <ap@small-co.com>",
-]
-
-SPOOFED_HEADERS = [
-    "Authentication-Results: spf=fail dkim=fail dmarc=fail\nFrom: Invoice <x@supplier.com>\nReturn-Path: <b@phisher.tk>",
-    "Authentication-Results: spf=fail dkim=pass dmarc=fail\nFrom: Billing <b@mybank.com>\nReturn-Path: <b@mybank.com>\nReply-To: <c@attacker.xyz>",
-    "Authentication-Results: spf=softfail dkim=none dmarc=fail\nFrom: CFO <cfo@bigcorp.com>\nReturn-Path: <noreply@suspicious.net>",
-    "Authentication-Results: spf=permerror dkim=fail dmarc=fail\nFrom: Support <s@paypal.com>\nReturn-Path: <x@paypa1.xyz>\nReply-To: <c@evil.ru>",
-]
-
-
-def eval_check_email_headers() -> EvalResult:
+async def eval_check_email_headers() -> EvalResult:
     r = EvalResult("check_email_headers", corpus_size=len(CLEAN_HEADERS) + len(SPOOFED_HEADERS))
     for h in CLEAN_HEADERS:
-        v = _parse_headers(h)
+        v = await _verdict("check_email_headers", raw_headers=h)
         if v == "HEADERS_CLEAN": r.tn += 1
         else: r.fp += 1
     for h in SPOOFED_HEADERS:
-        v = _parse_headers(h)
+        v = await _verdict("check_email_headers", raw_headers=h)
         if v in ("HIGH_SPOOFING_RISK", "MODERATE_RISK"): r.tp += 1
         else: r.fn += 1
     r.notes = (
         "Parses MTA pre-evaluated auth results. "
-        "Known FP source: senders with SPF pass but no DKIM/DMARC score +25 (MODERATE_RISK). "
+        "Known FP source: senders with SPF pass but no DKIM/DMARC score +25; "
+        "a bulk-mailer X-Mailer (+10) or >8 Received hops (+15) on top of that reaches MODERATE_RISK. "
         "Tune thresholds for environments with many small suppliers lacking DMARC."
     )
+    r.notes += _error_note("check_email_headers")
     return r
 
 
@@ -268,44 +216,32 @@ def eval_check_email_headers() -> EvalResult:
 # ---------------------------------------------------------------------------
 
 async def eval_analyze_url_reputation() -> EvalResult:
-    import httpx
     r = EvalResult("analyze_url_reputation", corpus_size=0)
     known_good = ["https://github.com", "https://anthropic.com", "https://python.org"]
     known_bad  = ["fakespotter-no-resolve-12345.invalid", "this-domain-eval-fakespotter.invalid"]
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=10,
-                                  headers={"User-Agent": "FakeSpotter/1.0 eval"}) as client:
-        for url in known_good:
-            r.corpus_size += 1
-            score = 0
-            try:
-                domain = url.split("//")[1]
-                socket.getaddrinfo(domain, None)
-                resp = await client.get(url)
-                if resp.status_code >= 400: score += 20
-                miss = [h for h in ["strict-transport-security", "x-frame-options", "x-content-type-options"]
-                        if h not in resp.headers]
-                if len(miss) >= 2: score += 10
-            except Exception: score += 30
-            v = "POOR_REPUTATION" if score >= 50 else "MODERATE_RISK" if score >= 35 else "GOOD_REPUTATION"
-            if v == "GOOD_REPUTATION": r.tn += 1
-            else: r.fp += 1
+    for url in known_good:
+        r.corpus_size += 1
+        v = await _verdict("analyze_url_reputation", url=url)
+        if v == "GOOD_REPUTATION": r.tn += 1
+        else: r.fp += 1
 
-        for domain in known_bad:
-            r.corpus_size += 1
-            try:
-                socket.getaddrinfo(domain, None)
-                r.fn += 1
-            except socket.gaierror:
-                r.tp += 1
+    for domain in known_bad:
+        r.corpus_size += 1
+        v = await _verdict("analyze_url_reputation", url=domain)
+        if v in ("POOR_REPUTATION", "MODERATE_RISK"): r.tp += 1
+        else: r.fn += 1
 
     r.notes = (
         "Live DNS+HTTP -- not a static corpus; re-run reflects current state. "
         "Known FP source: established domains missing 2+ of 3 security headers "
-        "(x-frame-options, x-content-type-options, strict-transport-security) score +10. "
-        "MODERATE_RISK threshold raised to 35 (fixed in S10) — established domains now clear cleanly. "
-        "FP rate: 0% after fix (was 66.7%)."
+        "(x-frame-options, x-content-type-options, strict-transport-security) score +10; "
+        "with an HTTP 4xx/5xx (+20) that is 30, still under the 35-point MODERATE_RISK threshold. "
+        "A non-resolving domain scores +30 for DNS plus +10 for the failed connection "
+        "(MODERATE_RISK). Before the httpx exception fix, every failed fetch made the tool "
+        "return an AttributeError instead of a verdict."
     )
+    r.notes += _error_note("analyze_url_reputation")
     return r
 
 
@@ -317,6 +253,9 @@ def print_table(results: list[EvalResult]) -> None:
     print(f"\n{'Tool':<35} {'N':>5} {'FP%':>7} {'FN%':>7} {'Acc%':>7}")
     print("-" * 65)
     for r in results:
+        if not r.measured:
+            print(f"{r.tool:<35} {'-':>5} {'not measured':>23}")
+            continue
         print(f"{r.tool:<35} {r.corpus_size:>5} {r.fp_rate:>6.1f}% {r.fn_rate:>6.1f}% {r.accuracy:>6.1f}%")
 
 
@@ -335,6 +274,9 @@ def write_accuracy_md(results: list[EvalResult], path: Path) -> None:
         "|------|---|---------|---------|----------|",
     ]
     for r in results:
+        if not r.measured:
+            lines.append(f"| `{r.tool}` | — | not measured | not measured | not measured |")
+            continue
         lines.append(f"| `{r.tool}` | {r.corpus_size} | {r.fp_rate:.1f}% | {r.fn_rate:.1f}% | {r.accuracy:.1f}% |")
 
     lines += ["", "## Detail and methodology", ""]
@@ -342,7 +284,8 @@ def write_accuracy_md(results: list[EvalResult], path: Path) -> None:
         lines += [
             f"### `{r.tool}`",
             "",
-            f"N={r.corpus_size} &nbsp;.&nbsp; TP={r.tp} TN={r.tn} FP={r.fp} FN={r.fn}",
+            (f"N={r.corpus_size} &nbsp;.&nbsp; TP={r.tp} TN={r.tn} FP={r.fp} FN={r.fn}"
+             if r.measured else "**Not measured in this run.**"),
             "",
             r.notes,
             "",
@@ -361,18 +304,36 @@ def write_accuracy_md(results: list[EvalResult], path: Path) -> None:
     print(f"\nWrote {path}")
 
 
+def not_measured_url_reputation() -> EvalResult:
+    r = EvalResult("analyze_url_reputation", corpus_size=0, measured=False)
+    r.notes = (
+        "Skipped (--skip-live): this step needs direct DNS + HTTPS access to live sites, which "
+        "was not available when this file was generated. No FP/FN figure is claimed. "
+        "Offline, the scoring rules are covered by tests/test_invoice_guard.py "
+        "(good domain -> GOOD_REPUTATION, unresolvable + unreachable -> MODERATE_RISK, "
+        "TLS failure +20). Earlier versions of this file reported 0% FP/FN for this tool; "
+        "those numbers did not come from the real tool, which at the time returned "
+        "'[FakeSpotter Error] AttributeError' on every failed fetch."
+    )
+    return r
+
+
 async def main() -> None:
     print("FakeSpotter -- eval_deterministic.py")
     print("=" * 65)
     results = []
     print("\n[1/4] verify_document_integrity...")
-    results.append(eval_verify_document_integrity(100))
+    results.append(await eval_verify_document_integrity(100))
     print("[2/4] analyze_file_metadata...")
-    results.append(eval_analyze_file_metadata())
+    results.append(await eval_analyze_file_metadata())
     print("[3/4] check_email_headers...")
-    results.append(eval_check_email_headers())
-    print("[4/4] analyze_url_reputation (live)...")
-    results.append(await eval_analyze_url_reputation())
+    results.append(await eval_check_email_headers())
+    if "--skip-live" in sys.argv[1:]:
+        print("[4/4] analyze_url_reputation (live)... skipped (--skip-live)")
+        results.append(not_measured_url_reputation())
+    else:
+        print("[4/4] analyze_url_reputation (live)...")
+        results.append(await eval_analyze_url_reputation())
     print_table(results)
     docs_dir = Path(__file__).parent.parent / "docs"
     write_accuracy_md(results, docs_dir / "accuracy.md")

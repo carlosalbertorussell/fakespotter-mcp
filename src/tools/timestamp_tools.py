@@ -27,8 +27,11 @@ What is verified:
 
 Verdicts:
   TIMESTAMP_VALID     — token intact, TSA trusted, certificate valid
-  TIMESTAMP_INVALID   — token tampered or TSA signature invalid
-  TIMESTAMP_EXPIRED   — TSA certificate expired at time of stamping
+  TIMESTAMP_INVALID   — token tampered, TSA signature/chain invalid, or the
+                        token does not cover the given document_hash
+  TIMESTAMP_EXPIRED   — token intact and chain valid, but the TSA certificate
+                        has expired (the flags say whether before or after
+                        the stamping time)
   NO_TIMESTAMP_FOUND  — no embedded timestamp in the document
 
 Dependency: pyhanko (already in requirements from S12)
@@ -52,20 +55,15 @@ from utils.reporter import ForensicReporter
 # Timestamp extraction and verification
 # ---------------------------------------------------------------------------
 
-def _verify_tsr_bytes(tsr_bytes: bytes) -> dict:
-    """
-    Verify an RFC 3161 timestamp response using pyhanko.
-    Returns a dict with verdict, time, TSA info, and any errors.
-    """
-    from pyhanko.sign.timestamps import HTTPTimeStamper
-    from pyhanko.sign.validation import validate_tst_signed_data
-    from pyhanko_certvalidator.context import ValidationContext
-    from asn1crypto import tsp, core, cms
-
-    result: dict = {
+def _empty_result(source: str) -> dict:
+    return {
+        "source":         source,
         "valid":          False,
+        "intact":         False,
+        "expired":        False,
         "trusted_time":   None,
         "tsa_name":       "",
+        "tsa_cert_valid_until": "",
         "hash_algorithm": "",
         "message_imprint_hex": "",
         "policy_oid":     "",
@@ -73,19 +71,47 @@ def _verify_tsr_bytes(tsr_bytes: bytes) -> dict:
         "error":          "",
     }
 
+
+def _tsa_signing_cert(signed_data):
+    """The certificate matching the token's SignerInfo sid (falls back to the first one)."""
+    certs = [c.chosen for c in (signed_data["certificates"] or []) if c.name == "certificate"]
+    if not certs:
+        return None
     try:
-        # Parse the TimeStampResponse
-        tst_response = tsp.TimeStampResp.load(tsr_bytes)
-        status = tst_response["status"]["status"].native
-        if status != "granted":
-            result["error"] = f"TSA returned status: {status}"
-            return result
+        sid = signed_data["signer_infos"][0]["sid"]
+        if sid.name == "issuer_and_serial_number":
+            want = sid.chosen
+            for cert in certs:
+                if (cert.issuer == want["issuer"]
+                        and cert.serial_number == want["serial_number"].native):
+                    return cert
+        elif sid.name == "subject_key_identifier":
+            for cert in certs:
+                if cert.key_identifier == sid.chosen.native:
+                    return cert
+    except Exception:
+        pass
+    return certs[0]
 
-        tst_info_bytes = tst_response["time_stamp_token"]["content"]["encap_content_info"]\
-            ["content"].parsed.contents
 
-        # Parse TSTInfo
-        tst_info = tsp.TSTInfo.load(tst_info_bytes)
+async def _verify_tst(signed_data, source: str, expected_imprint=None) -> dict:
+    """
+    Verify the SignedData of an RFC 3161 TimeStampToken with pyHanko.
+
+    ``expected_imprint`` is a callable (hash algorithm name -> digest) giving
+    the message imprint the token must cover, e.g. the digest of the PDF
+    signature it timestamps. Without one (a standalone .tsr), the token's own
+    imprint is used, so only the token's signature and chain are checked;
+    the caller compares the imprint against ``document_hash`` separately.
+    """
+    from pyhanko.sign.ades.report import AdESIndeterminate
+    from pyhanko.sign.validation.generic_cms import validate_tst_signed_data
+    from pyhanko_certvalidator.context import ValidationContext
+
+    result = _empty_result(source)
+
+    try:
+        tst_info = signed_data["encap_content_info"]["content"].parsed
         gen_time = tst_info["gen_time"].native
         if isinstance(gen_time, datetime):
             if gen_time.tzinfo is None:
@@ -97,58 +123,127 @@ def _verify_tsr_bytes(tsr_bytes: bytes) -> dict:
         # Message imprint
         msg_imprint = tst_info["message_imprint"]
         result["hash_algorithm"] = msg_imprint["hash_algorithm"]["algorithm"].native
-        result["message_imprint_hex"] = msg_imprint["hashed_message"].native.hex()
+        token_imprint = msg_imprint["hashed_message"].native
+        result["message_imprint_hex"] = token_imprint.hex()
 
-        # TSA name from signer info
-        signed_data = tst_response["time_stamp_token"]["content"]
-        signer_infos = signed_data["signer_infos"]
-        if signer_infos:
-            # Get certificate from included certs
-            certs = signed_data["certificates"]
-            if certs:
-                cert = certs[0].chosen
-                subject = cert.subject
-                result["tsa_name"] = subject.human_friendly
+        # TSA identity (the certificate that signed the token)
+        tsa_cert = _tsa_signing_cert(signed_data)
+        if tsa_cert is not None:
+            result["tsa_name"] = tsa_cert.subject.human_friendly
+            result["tsa_cert_valid_until"] = tsa_cert.not_valid_after.isoformat()
 
-        # Validate signature
+        # Validate signature, imprint and TSA chain of trust
         vc = ValidationContext(allow_fetching=True)
-        status_obj = validate_tst_signed_data(
-            tst_response["time_stamp_token"]["content"], vc
+        status = await validate_tst_signed_data(
+            signed_data, vc, expected_imprint or (lambda _algo: token_imprint),
         )
-        result["valid"]   = bool(status_obj.intact and status_obj.valid)
-        if not status_obj.intact:
-            result["error"] = "Timestamp token integrity check failed — token may be tampered"
-        elif not status_obj.valid:
-            result["error"] = "TSA certificate chain validation failed"
+        intact = bool(status.get("intact"))
+        valid  = bool(status.get("valid"))
+        problem = status.get("trust_problem_indic")
+        trusted = intact and valid and problem is None and status.get("validation_path") is not None
+        result["intact"] = intact
+        result["valid"]  = trusted
 
-    except ImportError:
-        result["error"] = "asn1crypto or pyhanko not available"
+        if not intact:
+            result["error"] = "Timestamp token integrity check failed — token may be tampered"
+        elif not valid:
+            result["error"] = "Timestamp token signature is invalid"
+        elif not trusted:
+            not_after = tsa_cert.not_valid_after if tsa_cert is not None else None
+            if (
+                problem in (AdESIndeterminate.OUT_OF_BOUNDS_NO_POE,
+                            AdESIndeterminate.OUT_OF_BOUNDS_NOT_REVOKED,
+                            AdESIndeterminate.EXPIRED)
+                and not_after is not None
+                and not_after < datetime.now(timezone.utc)
+            ):
+                result["expired"] = True
+                when = (
+                    "before the stamping time" if isinstance(gen_time, datetime) and not_after < gen_time
+                    else "after the stamping time; no long-term validation data proves it was valid then"
+                )
+                result["error"] = f"TSA certificate expired on {not_after.isoformat()} ({when})"
+            else:
+                reason = getattr(problem, "name", None) or "no trusted path"
+                result["error"] = f"TSA certificate chain validation failed ({reason})"
+
     except Exception as exc:
-        result["error"] = str(exc)[:300]
+        result["error"] = str(exc)[:300] or type(exc).__name__
 
     return result
 
 
-def _extract_timestamps_from_pdf(pdf_bytes: bytes) -> list[bytes]:
-    """Extract RFC 3161 timestamp tokens embedded in a signed PDF."""
-    from pyhanko.pdf_utils.reader import PdfFileReader
-    from pyhanko.sign.validation.pdf_embedded import EmbeddedPdfSignature
+async def _verify_tsr_bytes(tsr_bytes: bytes) -> dict:
+    """
+    Verify an RFC 3161 TimeStampResp (.tsr) using pyhanko.
+    Returns a dict with validity, time, TSA info, and any errors.
+    """
+    from asn1crypto import core, tsp
 
-    tsr_list: list[bytes] = []
+    def _fail(message: str) -> dict:
+        result = _empty_result("tsr")
+        result["error"] = message
+        return result
+
+    try:
+        # Read PKIStatusInfo on its own first: a rejection carries no token,
+        # and asn1crypto refuses to parse a TimeStampResp without one.
+        status_info = tsp.PKIStatusInfo.load(core.Sequence.load(tsr_bytes)[0].dump())
+        status = status_info["status"].native
+    except Exception as exc:
+        detail = " ".join((str(exc) or type(exc).__name__).split())[:200]
+        return _fail(f"Not a valid RFC 3161 TimeStampResp: {detail}")
+    if status not in ("granted", "granted_with_mods"):
+        return _fail(f"TSA returned status: {status}")
+
+    try:
+        signed_data = tsp.TimeStampResp.load(tsr_bytes)["time_stamp_token"]["content"]
+    except Exception as exc:
+        detail = " ".join((str(exc) or type(exc).__name__).split())[:200]
+        return _fail(f"Not a valid RFC 3161 TimeStampResp: {detail}")
+
+    return await _verify_tst(signed_data, "tsr")
+
+
+def _extract_timestamps_from_pdf(pdf_bytes: bytes) -> list[tuple[str, object, object]]:
+    """
+    Extract RFC 3161 timestamp tokens embedded in a PDF.
+
+    Returns ``(source, SignedData, expected_imprint)`` tuples for:
+      - signature timestamps (unsigned attribute signatureTimeStampToken),
+        which must cover the digest of the signature value;
+      - content timestamps (signed attribute content-time-stamp), which must
+        cover the signed byte range;
+      - document timestamps (/DocTimeStamp, ETSI.RFC3161), whose SignedData
+        is itself the token and must cover the signed byte range.
+    """
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.sign.general import find_cms_attribute_iter
+    from pyhanko.sign.validation.generic_cms import message_imprint_checker
+
+    found: list[tuple[str, object, object]] = []
     doc = PdfFileReader(io.BytesIO(pdf_bytes))
 
     for sig in doc.embedded_signatures:
+        name = sig.field_name or "signature"
         try:
-            # Check for document timestamp (LTV/DSS embedded TST)
-            if hasattr(sig, "attached_timestamp_data") and sig.attached_timestamp_data:
-                tsr_list.append(bytes(sig.attached_timestamp_data))
-            # Check for signature timestamp attribute
-            if hasattr(sig, "external_timestamp") and sig.external_timestamp:
-                tsr_list.append(bytes(sig.external_timestamp))
+            if sig.sig_object_type == "/DocTimeStamp":
+                found.append((f"document timestamp '{name}'", sig.signed_data, sig.compute_digest))
+                continue
+            signer_info = sig.signer_info
+            for token in find_cms_attribute_iter(signer_info["unsigned_attrs"],
+                                                 "signature_time_stamp_token"):
+                found.append((f"signature timestamp of '{name}'", token["content"],
+                              message_imprint_checker(signer_info)))
+            for token in find_cms_attribute_iter(signer_info["signed_attrs"],
+                                                 "content_time_stamp"):
+                found.append((f"content timestamp of '{name}'", token["content"],
+                              sig.compute_digest))
         except Exception:
+            # Malformed or absent attributes: nothing to extract for this field.
             pass
 
-    return tsr_list
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +321,10 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
 
         Verdicts:
           TIMESTAMP_VALID     — token intact, TSA trusted
-          TIMESTAMP_INVALID   — tampered token or invalid TSA chain
-          TIMESTAMP_EXPIRED   — TSA certificate expired at stamping time
+          TIMESTAMP_INVALID   — tampered token, invalid TSA chain, or token
+                                does not cover document_hash
+          TIMESTAMP_EXPIRED   — TSA certificate has expired (at or after
+                                stamping time; see flags)
           NO_TIMESTAMP_FOUND  — no embedded timestamp in the document
 
         Requires: pyhanko (already in requirements from S12)
@@ -238,7 +335,8 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
             return "[FakeSpotter Error] pyhanko not installed. Add pyhanko>=0.37.0,<1 to requirements.txt."
 
         flags:  list[str] = []
-        tokens: list[bytes] = []
+        tsr_inputs: list[bytes] = []
+        pdf_tokens: list[tuple[str, object, object]] = []
 
         async with httpx.AsyncClient(
             follow_redirects=True, timeout=30,
@@ -247,7 +345,7 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
 
             if params.tsr_hex:
                 try:
-                    tokens.append(bytes.fromhex(params.tsr_hex.strip()))
+                    tsr_inputs.append(bytes.fromhex(params.tsr_hex.strip()))
                     flags.append("Input: hex-encoded TSR")
                 except ValueError as e:
                     return f"[FakeSpotter Error] Invalid hex: {e}"
@@ -255,7 +353,7 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
             elif params.tsr_url:
                 resp = await client.get(params.tsr_url)
                 resp.raise_for_status()
-                tokens.append(resp.content)
+                tsr_inputs.append(resp.content)
                 flags.append(f"Input: .tsr file ({len(resp.content)} bytes)")
 
             elif params.pdf_url:
@@ -264,12 +362,13 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
                 pdf_bytes = resp.content
                 if pdf_bytes[:4] != b"%PDF":
                     return "[FakeSpotter Error] File is not a PDF"
-                tokens = _extract_timestamps_from_pdf(pdf_bytes)
-                flags.append(f"Input: PDF ({len(pdf_bytes)} bytes, {len(tokens)} timestamp(s) found)")
+                pdf_tokens = _extract_timestamps_from_pdf(pdf_bytes)
+                flags.append(f"Input: PDF ({len(pdf_bytes)} bytes, {len(pdf_tokens)} timestamp(s) found)")
             else:
                 return "[FakeSpotter Error] Provide pdf_url, tsr_url, or tsr_hex."
 
-        if not tokens:
+        token_count = len(tsr_inputs) + len(pdf_tokens)
+        if not token_count:
             verdict = "NO_TIMESTAMP_FOUND"
             trust   = 50
             flags.append("No RFC 3161 timestamp tokens found in the document")
@@ -278,11 +377,15 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
                 "timestamps_found": 0, "forensic_flags": flags,
             }
         else:
-            results = []
-            for i, tsr in enumerate(tokens, 1):
-                r = _verify_tsr_bytes(tsr)
-                results.append(r)
+            results = [await _verify_tsr_bytes(tsr) for tsr in tsr_inputs]
+            for source, signed_data, imprint in pdf_tokens:
+                results.append(await _verify_tst(signed_data, source, imprint))
+
+            hash_mismatch = False
+            for i, r in enumerate(results, 1):
                 label = f"Timestamp {i}"
+                if r["source"] != "tsr":
+                    flags.append(f"{label}: {r['source']}")
                 if r["trusted_time"]:
                     flags.append(f"{label}: trusted time = {r['trusted_time']}")
                 if r["tsa_name"]:
@@ -291,22 +394,24 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
                     flags.append(f"{label}: algorithm = {r['hash_algorithm']}")
                 if r["error"]:
                     flags.append(f"⚠ {label}: {r['error']}")
-                # Document hash verification
+                # Document hash verification (document_hash is SHA-256)
                 if params.document_hash and r["message_imprint_hex"]:
                     expected = params.document_hash.lower().strip()
                     actual   = r["message_imprint_hex"].lower()
-                    if expected == actual:
+                    if r["hash_algorithm"] != "sha256":
+                        flags.append(
+                            f"⚠ {label}: token imprint uses {r['hash_algorithm']}, "
+                            "cannot compare with the SHA-256 document_hash")
+                    elif expected == actual:
                         flags.append(f"{label}: document hash MATCHES ✓")
                     else:
+                        hash_mismatch = True
                         flags.append(f"⚠ {label}: document hash MISMATCH — token covers different document")
 
-            all_valid = all(r["valid"] for r in results)
-            any_error = any(r["error"] for r in results)
-
-            if all_valid and not any_error:
+            if all(r["valid"] for r in results) and not hash_mismatch:
                 verdict = "TIMESTAMP_VALID"
                 trust   = 100
-            elif any_error and "expired" in " ".join(r["error"] for r in results).lower():
+            elif not hash_mismatch and all(r["valid"] or r["expired"] for r in results):
                 verdict = "TIMESTAMP_EXPIRED"
                 trust   = 20
             else:
@@ -316,7 +421,7 @@ def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
             findings = {
                 "verdict":          verdict,
                 "trust_score":      trust,
-                "timestamps_found": len(tokens),
+                "timestamps_found": token_count,
                 "timestamp_results": results,
                 "forensic_flags":   flags,
             }

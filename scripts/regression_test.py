@@ -31,7 +31,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-os.environ.setdefault("FAKESPOTTER_TRANSPORT", "stdio")
 os.environ.setdefault("FAKESPOTTER_TMP", "/tmp/fakespotter")
 Path(os.environ["FAKESPOTTER_TMP"]).mkdir(parents=True, exist_ok=True)
 

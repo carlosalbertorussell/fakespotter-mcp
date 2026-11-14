@@ -1,6 +1,6 @@
 # FakeSpotter — Roadmap
 
-*Última actualización: 2026-10-12*
+*Última actualización: 2026-11-14*
 
 ## Arco completado (S1–S10)
 
@@ -53,6 +53,8 @@ Valida firmas digitales PKCS#7/CMS embebidas en PDFs (Adobe Acrobat, DocuSign, c
 **Verdicts:** `SIGNATURE_VALID` · `SIGNATURE_INVALID` · `SIGNATURE_EXPIRED` · `DOCUMENT_MODIFIED_AFTER_SIGNING` · `NO_SIGNATURE_FOUND`
 
 **Nueva dep:** `pyhanko>=0.20,<1` · `cryptography>=42,<44`
+
+> **Nota (2026-11):** hasta S25 (PR #95) esta tool devolvía `SIGNATURE_INVALID` para todo PDF firmado (llamaba a la validación síncrona de pyHanko dentro del event loop). Corregido y cubierto por `tests/test_signatures_timestamps.py`; límites vigentes (trust roots, LTV) en README → Declared Limits.
 
 ---
 
@@ -220,6 +222,8 @@ Input: `pdf_url` (extrae TSTs embebidos), `tsr_url` (archivo .tsr), `tsr_hex` (t
 Verdicts: `TIMESTAMP_VALID` · `TIMESTAMP_INVALID` · `TIMESTAMP_EXPIRED` · `NO_TIMESTAMP_FOUND`
 **Sin dependencias nuevas.**
 
+> **Nota (2026-11):** hasta S25 (PR #95) esta tool fallaba con `ImportError` ante cualquier token y nunca encontraba los timestamps embebidos en un PDF. Corregido y cubierto por `tests/test_signatures_timestamps.py`. En el mismo cambio se corrigieron `validate_bank_account` (auto-detección, dígitos CBU/CVU), `validate_mrz` (dígito compuesto TD3), `analyze_pdf_metadata` (fechas), `correlate_documents` (`hamming_threshold`), `analyze_url_reputation` y el modo quick de las tools de red.
+
 ---
 
 ### S21 — `analyze_email_thread` · tool #29
@@ -246,23 +250,23 @@ Actualiza README (29 tools, tabla completa de toolkit determinista con S11–S21
 
 ## Arco S20–S23 (ejecutado) ✅
 
-> Los sprints S20–S22 planificados arriba fueron completados en arcos anteriores.
-> Los sprints efectivamente ejecutados bajo estos números fueron:
+> **Corrección (2026-11-14):** una versión anterior de esta tabla atribuía S20–S22 a los PRs #77, #79 y #80. Eso era incorrecto: #77 y #80 son PRs de Dependabot (uvicorn, cryptography) mergeados recién el 2026-11-14. Las filas siguientes reflejan el historial real de git.
 
 | Sprint | PR | Descripción |
 |--------|----|-------------|
-| S20 | #77 | Dependabot: 3 PRs de seguridad mergeados; CI verde en Python 3.13 + 3.14 |
-| S21 | #79 | CI matrix 3.11+3.12 → 3.13+3.14; requirements.txt: `mcp>=1.29.1,<2` + `pillow` + `httpx`; `EXPECTED_TOOLS` 27→29 |
-| S22 | #80 | `ci_check.py`: captura stdout del servidor; detecta `ImportError` antes de contar tools; `EXPECTED_TOOLS=29` validado |
+| —   | #72 | Migración de `signature_tools.py` a la API de pyHanko 0.37 |
+| S20 | #73 | `verify_rfc3161_timestamp` — tool #28 (ver nota en la sección S20: no funcionaba hasta S25) |
+| S21 | #74 | `analyze_email_thread` — tool #29 |
+| S22 | `833a77e` (commit directo, sin PR) | Docs: README + roadmap actualizados para 29 tools |
 | S23 | #82 | Cierra brecha README vs realidad — `HFAudioBackend` wired en `analyze_audio_authenticity`; `HFTextBackend` wired en `detect_ai_generated_text`; `hf_token` añadido a ambos inputs; fallback `LAYER_1_FALLBACK` explícito; `scripts/regression_test.py` (19 tests); paso de regresión añadido a CI |
 
 **Estado al cierre de S23:** 29 tools · 5/5 neural-ensemble tools realmente cableadas · CI: arranque + inventario + regresión
 
 ---
 
-## Arco S24 (en curso)
+## Arco S24 ✅
 
-### S24 — Docs sync + pre-merge gate
+### S24 — Docs sync + pre-merge gate · PR #83
 
 Elimina divergencia entre roadmap/README y el estado real del repo. Implementa validación automática pre-merge.
 
@@ -271,3 +275,73 @@ Elimina divergencia entre roadmap/README y el estado real del repo. Implementa v
 - `roadmap.md`: arco S20–S23 ejecutado documentado
 - `scripts/check_docs_sync.py`: valida que `EXPECTED_TOOLS` en `ci_check.py` coincide con el conteo declarado en README
 - `.github/workflows/ci.yml`: paso `check_docs_sync` como gate obligatorio pre-merge
+
+**Después de S24:** PR #93: `classifier-health.yml` con permisos corregidos; se salta sin error si falta el token de HF.
+
+---
+
+## Arco S25: mantenimiento, tests reales y corrección de bugs (2026-11-14)
+
+### Auditoría de cobertura (punto de partida)
+
+Antes de S25 solo 2 de las 29 tools tenían tests que verificaban su resultado. `scripts/regression_test.py` reemplaza Pillow, PyMuPDF, pyHanko y demás librerías pesadas por stubs (`MagicMock`), así que no podía detectar ni upgrades ni bugs reales. `ci_check.py` solo contaba tools. `eval_deterministic.py` evaluaba una copia de la lógica en vez del código real, y esa copia ya había divergido.
+
+### Dependencias (sobre `main`)
+
+| PR | Cambio |
+|----|--------|
+| #77, #80, #81, #86, #87, #90, #91 | Dependabot menores: uvicorn, cryptography, python-dotenv, numpy, pydantic, pyhanko, c2pa-python |
+| #94 | **Migración a mcp 2.x** (`FastMCP` → `MCPServer`); el bind HTTP explícito a `0.0.0.0` hace falta en 2.x. Listado de tools y resultados idénticos byte a byte a 1.x. `ci_check.py` verifica los 29 nombres exactos. Reemplaza a #84 (cerrado) |
+
+### S25 · PR #95
+
+**Suite de tests real (`tests/`, pytest): 203 tests, offline y deterministas.**
+- Llama a las tools reales a través del cliente MCP público, con las librerías reales: `conftest.py` falla si hay stubs.
+- Los fixtures se generan en tiempo de test: PKI de prueba, PDFs firmados con pyHanko, TSA local, QR e imágenes. No se commitean binarios.
+- Cubre Invoice Guard, cuentas bancarias, MRZ, firmas y timestamps, metadatos PDF, QR, correlación, hilos de email e inventario de tools.
+- `eval_deterministic.py` ahora usa las tools reales, con un nuevo flag `--skip-live`.
+
+**Bugs corregidos.** Todos existían en producción y cada uno tenía un test que fallaba antes del fix:
+
+| Tool | Bug | Efecto antes del fix |
+|------|-----|----------------------|
+| `verify_digital_signature` | Validación síncrona de pyHanko dentro del event loop; import faltante | Todo PDF firmado → `SIGNATURE_INVALID` |
+| `verify_rfc3161_timestamp` | Import incorrecto; llamada sin `await`; extracción de PDF rota | Fallaba con cualquier token; con PDF nunca funcionó |
+| `check_email_headers` (+ modo quick de `scan_phishing_url` y `analyze_url_reputation`) | El helper de modo quick no reconocía los verdicts de estas tools | Siempre "UNCERTAIN", sin verdict (modo por defecto) |
+| `analyze_url_reputation` | Capturaba `httpx.ConnectSSLError`, que no existe | Error en vez de verdict ante cualquier fallo de conexión |
+| `validate_bank_account` | Auto-detección con mayúsculas/minúsculas; pesos BCRA incorrectos en CBU/CVU | `format="auto"` rechazaba IBAN/CLABE válidos; CBU/CVU reales rechazados |
+| `validate_mrz` | Dígito compuesto TD3 leído en la posición equivocada | El espécimen ICAO TD3 fallaba |
+| `analyze_pdf_metadata` | `strptime` sobre input recortado | Horas alteradas, offset UTC perdido, XMP nunca parseado |
+| `correlate_documents` | `hamming_threshold` nunca se usaba | El umbral se ignoraba |
+
+`SIGNATURE_EXPIRED` y `TIMESTAMP_EXPIRED` ahora son alcanzables y tienen tests. El parseo de fechas PDF ya no depende de la versión de Python.
+
+**Upgrades:**
+- Pillow `>=13,<14` y pymupdf `>=2.1,<3`, sin cambios de resultados. `import fitz` → `import pymupdf`. Reemplazan a #92 y #89 (cerrados).
+- Nota: pymupdf 2.x arrastra onnxruntime, y la imagen crece.
+
+**CI:**
+- Job nuevo de `docker build` + smoke test: `initialize` + `tools/list` = 29 tools.
+- Job experimental de Python 3.15, solo en ejecución manual (`workflow_dispatch`): en cada PR solo podía mostrar un check rojo.
+- `ci_check.py` verifica los nombres exactos de las 29 tools.
+
+**Configuración y docs:**
+- Dockerfile con `ENV PORT=8000`, la variable que el servidor realmente lee. Antes escuchaba en 8081 aunque exponía 8000.
+- `check_docs_sync.py` ahora falla si falta la frase del README, en vez de pasar en silencio.
+- `docs/accuracy.md` regenerado con las tools reales. URL reputation queda como "no medido": su 0% anterior venía de la copia de la lógica.
+- README → Declared Limits actualizado: trust roots y sin LTV en firmas, checks solo de checksum, fechas PDF sin offset.
+
+**Estado al cierre de S25:** 29 tools · mcp 2.x · 203 tests con librerías reales en CI (3.13 + 3.14) · 0 xfail
+
+---
+
+## Pendiente
+
+- **Python 3.15** (#88, abierto a propósito): bloqueado porque onnxruntime (vía pymupdf 2.x) no tiene wheels cp315, y scikit-image (vía passporteye) tampoco, ni compila en la imagen slim. Un chequeo semanal en PyPI avisa cuando estén disponibles.
+- **Medir URL reputation** con `python scripts/eval_deterministic.py` desde un host con acceso directo a internet.
+- **Límites conocidos** (documentados):
+  - En `analyze_url_reputation`, un error TLS solo sigue dando `GOOD_REPUTATION`, y un error de proxy no suma puntos.
+  - Firmas sin trust roots configurables y sin LTV.
+  - Sin análisis de actualizaciones incrementales posteriores a la firma.
+  - MRZ sin TD2.
+- **`serverInfo.version`** vacío desde mcp 2.x (se puede fijar con `MCPServer(version=...)`).

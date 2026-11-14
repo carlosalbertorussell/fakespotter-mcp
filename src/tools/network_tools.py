@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import socket
+import ssl
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -120,14 +121,37 @@ def _check_typosquatting(domain: str) -> list[tuple[int, str]]:
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+def _is_tls_error(exc: BaseException) -> bool:
+    """True if an httpx connection error was caused by TLS (bad/self-signed cert, handshake).
+
+    httpx has no dedicated TLS exception: certificate and handshake failures
+    surface as ``httpx.ConnectError`` chained from an ``ssl.SSLError``.
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        if isinstance(cur, ssl.SSLError):
+            return True
+        seen.add(id(cur))
+        cur = cur.__cause__ or cur.__context__
+    text = str(exc)
+    return "CERTIFICATE_VERIFY_FAILED" in text or "[SSL" in text
+
+
+# Quick-mode label for every verdict the three network tools can return.
+# MODERATE_RISK (and anything unknown) stays "uncertain - manual review".
+_FAKE_VERDICTS = frozenset({"HIGH_PHISHING_RISK", "HIGH_SPOOFING_RISK", "POOR_REPUTATION"})
+_AUTHENTIC_VERDICTS = frozenset({"LOW_RISK", "HEADERS_CLEAN", "GOOD_REPUTATION"})
+
+
 def _quick(verdict: str, score: int, flags: list[str], lang: str) -> str:
     label = (
-        i18n.t("verdict_fake", lang)      if "PHISHING" in verdict or "MALICIOUS" in verdict
-        else i18n.t("verdict_authentic", lang) if "SAFE" in verdict or "LEGITIMATE" in verdict
+        i18n.t("verdict_fake", lang)      if verdict in _FAKE_VERDICTS
+        else i18n.t("verdict_authentic", lang) if verdict in _AUTHENTIC_VERDICTS
         else i18n.t("verdict_uncertain", lang)
     )
     flag_str = " | ".join(flags) if flags else i18n.t("no_flags", lang)
-    return f"{label} ({score}/100) — {flag_str}"
+    return f"{label} ({score}/100) — {verdict} | {flag_str}"
 
 
 # ---------------------------------------------------------------------------
@@ -582,15 +606,21 @@ def register_analyze_url_reputation(mcp: MCPServer) -> None:
                         score += 10
                         flags.append(f"Missing security headers: {', '.join(missing_sec)}")
 
-            except httpx.ConnectSSLError:
-                tls_valid = False
-                score += 20
-                flags.append("TLS/SSL certificate error — invalid or self-signed")
             except httpx.TimeoutException:
                 score += 10
                 flags.append("Request timeout")
-            except Exception as http_err:
-                flags.append(f"HTTP check failed: {http_err}")
+            except httpx.ConnectError as conn_err:
+                if _is_tls_error(conn_err):
+                    tls_valid = False
+                    score += 20
+                    flags.append("TLS/SSL certificate error — invalid or self-signed")
+                else:
+                    # Unreachable host (refused, DNS failure, network down):
+                    # weighted like a timeout.
+                    score += 10
+                    flags.append("Cannot connect — host unreachable")
+            except httpx.HTTPError as http_err:
+                flags.append(f"HTTP check failed: {type(http_err).__name__}: {http_err}")
 
             score = min(100, score)
             verdict = (

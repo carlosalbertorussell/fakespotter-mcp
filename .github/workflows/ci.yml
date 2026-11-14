@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual runs also execute the experimental Python 3.15 job (see `py315`).
+  workflow_dispatch:
+# Least privilege: every job only checks out the repo.
+permissions:
+  contents: read
 jobs:
   docs-sync:
     name: docs sync gate (pre-merge)
@@ -32,9 +37,89 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
       - name: Versiones resueltas
         run: pip list
       - name: Arranque e inventario de tools
         run: python scripts/ci_check.py
       - name: Regression tests (neural wiring + statistical fallback)
         run: python scripts/regression_test.py
+      - name: Real-library tool tests (pytest, offline, separate process)
+        run: python -m pytest -ra
+
+  # Python 3.15 canary: manual runs only (Actions → CI → Run workflow).
+  # Today `pip install` fails on 3.15 because pymupdf>=2 depends on onnxruntime,
+  # which has no cp315 wheels yet; scikit-image (via passporteye) has none
+  # either. On every PR this job could only show a red check, so it doesn't run
+  # there. Once 3.15 installs and passes, move "3.15" into `arranque`'s matrix
+  # (and see Dependabot #88 for the Docker base image).
+  py315:
+    name: install + arranque + inventario de tools (3.15, experimental)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: docs-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+          allow-prereleases: true
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Versiones resueltas
+        run: pip list
+      - name: Arranque e inventario de tools
+        run: python scripts/ci_check.py
+      - name: Regression tests (neural wiring + statistical fallback)
+        run: python scripts/regression_test.py
+      - name: Real-library tool tests (pytest, offline, separate process)
+        run: python -m pytest -ra
+
+  docker:
+    name: docker build + arranque del contenedor
+    runs-on: ubuntu-latest
+    needs: docs-sync
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t fakespotter:ci .
+      - name: Start container
+        # server.py listens on $PORT (default 8081; the image sets 8000).
+        # Cloud Run injects PORT, so pass it the same way here.
+        run: docker run -d --name fakespotter -e PORT=8000 -p 8000:8000 fakespotter:ci
+      - name: Answers MCP initialize and lists 29 tools
+        run: |
+          set -euo pipefail
+          url=http://127.0.0.1:8000/mcp
+          accept='Accept: application/json, text/event-stream'
+          init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          for i in $(seq 1 60); do
+            code=$(curl -s -o init.out -D init.hdr -w '%{http_code}' -X POST "$url" \
+              -H 'Content-Type: application/json' -H "$accept" -d "$init" || true)
+            [ "$code" = 200 ] && break
+            sleep 1
+          done
+          if [ "$code" != 200 ]; then
+            echo "server did not answer initialize (last HTTP code: $code)"
+            docker logs fakespotter
+            exit 1
+          fi
+          grep -q '"serverInfo"' init.out
+          sid=$(grep -i '^mcp-session-id:' init.hdr | cut -d' ' -f2 | tr -d '\r')
+          curl -sf -o /dev/null -X POST "$url" -H 'Content-Type: application/json' -H "$accept" \
+            -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+          curl -sf -o tools.out -X POST "$url" -H 'Content-Type: application/json' -H "$accept" \
+            -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+          python3 - <<'PY'
+          import json
+          lines = [l[5:].strip() for l in open("tools.out") if l.startswith("data:")]
+          tools = json.loads(lines[-1])["result"]["tools"]
+          print(f"{len(tools)} tools listed by the container")
+          assert len(tools) == 29, sorted(t["name"] for t in tools)
+          PY
+      - name: Container logs
+        if: always()
+        run: docker logs fakespotter || true

@@ -10,7 +10,7 @@ import importlib.metadata as metadata
 import os
 import sys
 from pathlib import Path
-EXPECTED_TOOLS = 29
+EXPECTED_TOOLS = 29  # leido por scripts/check_docs_sync.py contra el README
 EXPECTED_TOOL_NAMES = frozenset({
   "analyze_audio_authenticity",
   "analyze_email_thread",
@@ -43,7 +43,6 @@ EXPECTED_TOOL_NAMES = frozenset({
   "verify_video_metadata",
 })
 _ROOT = Path(__file__).resolve().parent.parent
-os.environ.setdefault("FAKESPOTTER_TRANSPORT", "stdio")
 os.environ.setdefault("FAKESPOTTER_TMP", "/tmp/fakespotter")
 Path(os.environ["FAKESPOTTER_TMP"]).mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(_ROOT / "src"))
@@ -76,7 +75,7 @@ def main():
   for name in sorted(names):
     print(f" - {name}")
   if len(names) != len(set(names)):
-    fail("tools/list devolvio nombres duplicados")
+    fail(f"tools/list devolvio nombres duplicados: {sorted(n for n in set(names) if names.count(n) > 1)}")
   missing = sorted(EXPECTED_TOOL_NAMES - set(names))
   unexpected = sorted(set(names) - EXPECTED_TOOL_NAMES)
   if missing or unexpected:
