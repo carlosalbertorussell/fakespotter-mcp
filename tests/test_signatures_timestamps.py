@@ -213,14 +213,27 @@ def test_no_timestamp_in_signed_pdf_without_tst(web, signed_pdf):
     assert res.verdict == "NO_TIMESTAMP_FOUND", res.text
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: timestamp_tools._extract_timestamps_from_pdf looks for EmbeddedPdfSignature "
-    "attributes 'attached_timestamp_data' / 'external_timestamp', which pyHanko does not have, "
-    "so a signature timestamp token embedded in a PDF is never found."))
 def test_signature_timestamp_in_pdf_is_found(web, signed_pdf_with_tst):
     web.serve(PDF_URL, signed_pdf_with_tst, "application/pdf")
     res = call_tool("verify_rfc3161_timestamp", pdf_url=PDF_URL, report_mode="full")
     assert res.verdict != "NO_TIMESTAMP_FOUND", res.text
+
+
+def test_signature_timestamp_in_pdf_is_valid(web, signed_pdf_with_tst, trust_test_root):
+    web.serve(PDF_URL, signed_pdf_with_tst, "application/pdf")
+    res = call_tool("verify_rfc3161_timestamp", pdf_url=PDF_URL, report_mode="full")
+    assert res.verdict == "TIMESTAMP_VALID", res.text
+    assert "1 timestamp(s) found" in res.text
+    assert "signature timestamp of 'Signature1'" in res.text
+    assert "FakeSpotter Test TSA" in res.text
+
+
+def test_signature_timestamp_in_pdf_untrusted_tsa(web, signed_pdf_with_tst):
+    # No trust patch: the TSA chain cannot validate.
+    web.serve(PDF_URL, signed_pdf_with_tst, "application/pdf")
+    res = call_tool("verify_rfc3161_timestamp", pdf_url=PDF_URL, report_mode="full")
+    assert res.verdict == "TIMESTAMP_INVALID", res.text
+    assert "TSA certificate chain validation failed" in res.text
 
 
 def test_timestamp_rejects_non_pdf(web):
@@ -239,15 +252,6 @@ def test_timestamp_requires_input():
     assert res.text == "[FakeSpotter Error] Provide pdf_url, tsr_url, or tsr_hex."
 
 
-_TST_BUG = (
-    "BUG: timestamp_tools._verify_tsr_bytes imports validate_tst_signed_data from "
-    "pyhanko.sign.validation (it lives in pyhanko.sign.validation.generic_cms and is async) "
-    "outside its try block, so any token makes the tool raise ImportError. (Behind that, it "
-    "is called without await or the required expected_tst_imprint argument, and its dict "
-    "result is read as an object with .intact/.valid.)")
-
-
-@pytest.mark.xfail(strict=True, reason=_TST_BUG)
 def test_valid_tsr_hex(unsigned_pdf, trust_test_root):
     res = call_tool("verify_rfc3161_timestamp", tsr_hex=pki.make_tsr(unsigned_pdf).hex(),
                     report_mode="full")
@@ -255,7 +259,6 @@ def test_valid_tsr_hex(unsigned_pdf, trust_test_root):
     assert "TSA = " in res.text and "FakeSpotter Test TSA" in res.text
 
 
-@pytest.mark.xfail(strict=True, reason=_TST_BUG)
 def test_valid_tsr_url_matches_document_hash(web, unsigned_pdf, trust_test_root):
     web.serve(TSR_URL, pki.make_tsr(unsigned_pdf), "application/timestamp-reply")
     res = call_tool("verify_rfc3161_timestamp", tsr_url=TSR_URL,
@@ -264,11 +267,48 @@ def test_valid_tsr_url_matches_document_hash(web, unsigned_pdf, trust_test_root)
     assert "document hash MATCHES" in res.text
 
 
-@pytest.mark.xfail(strict=True, reason=_TST_BUG)
 def test_tsr_for_other_document_hash_mismatch(unsigned_pdf, trust_test_root):
     res = call_tool("verify_rfc3161_timestamp", tsr_hex=pki.make_tsr(b"other").hex(),
                     document_hash=hashlib.sha256(unsigned_pdf).hexdigest(), report_mode="full")
     assert "document hash MISMATCH" in res.text, res.text
+    # A genuine token for some other document does not vouch for this one.
+    assert res.verdict == "TIMESTAMP_INVALID", res.text
+
+
+def test_untrusted_tsa_is_invalid(unsigned_pdf):
+    # No trust patch: the test root is unknown, so the TSA chain cannot validate.
+    res = call_tool("verify_rfc3161_timestamp", tsr_hex=pki.make_tsr(unsigned_pdf).hex(),
+                    report_mode="full")
+    assert res.verdict == "TIMESTAMP_INVALID", res.text
+    assert "TSA certificate chain validation failed" in res.text
+
+
+def test_tsa_expired_before_stamping(unsigned_pdf, trust_test_root):
+    tsr = pki.make_tsr(unsigned_pdf, tsa=pki.expired_tsa())
+    res = call_tool("verify_rfc3161_timestamp", tsr_hex=tsr.hex(), report_mode="full")
+    assert res.verdict == "TIMESTAMP_EXPIRED", res.text
+    assert "TSA certificate expired on" in res.text
+    assert "before the stamping time" in res.text
+
+
+def test_tsa_expired_after_stamping(unsigned_pdf, trust_test_root):
+    import datetime as dt
+
+    stamped = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=60)
+    tsr = pki.make_tsr(unsigned_pdf, tsa=pki.expired_tsa(), fixed_dt=stamped)
+    res = call_tool("verify_rfc3161_timestamp", tsr_hex=tsr.hex(), report_mode="full")
+    assert res.verdict == "TIMESTAMP_EXPIRED", res.text
+    assert "after the stamping time" in res.text
+
+
+def test_expired_and_tampered_tsr_is_invalid(unsigned_pdf, trust_test_root):
+    raw = pki.make_tsr(unsigned_pdf, tsa=pki.expired_tsa())
+    tst_info = tsp.TimeStampResp.load(raw)["time_stamp_token"]["content"][
+        "encap_content_info"]["content"].parsed
+    serial = tst_info["serial_number"].dump()
+    forged = raw.replace(serial, serial[:-1] + bytes([serial[-1] ^ 0x01]))
+    res = call_tool("verify_rfc3161_timestamp", tsr_hex=forged.hex(), report_mode="full")
+    assert res.verdict == "TIMESTAMP_INVALID", res.text
 
 
 def _tampered_tsr(document: bytes) -> bytes:
@@ -288,7 +328,6 @@ def _rejected_tsr() -> bytes:
     return bytes.fromhex("3005300302010" "2")
 
 
-@pytest.mark.xfail(strict=True, reason=_TST_BUG)
 @pytest.mark.parametrize("make", [
     pytest.param(lambda doc: _tampered_tsr(doc), id="tampered_tstinfo"),
     pytest.param(lambda doc: _rejected_tsr(), id="tsa_rejection"),
@@ -307,3 +346,9 @@ def test_tampered_fixture_breaks_signature_per_pyhanko(unsigned_pdf):
     status = asyncio.run(validate_tst_signed_data(
         resp["time_stamp_token"]["content"], _vc(), _imprint(unsigned_pdf)))
     assert not status["intact"]
+
+
+def test_tsa_rejection_reports_status():
+    res = call_tool("verify_rfc3161_timestamp", tsr_hex=_rejected_tsr().hex(), report_mode="full")
+    assert res.verdict == "TIMESTAMP_INVALID", res.text
+    assert "TSA returned status: rejection" in res.text

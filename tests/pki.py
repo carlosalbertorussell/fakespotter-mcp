@@ -96,18 +96,29 @@ def test_pki() -> TestPKI:
     )
 
 
-@lru_cache(maxsize=1)
-def expired_signer() -> Identity:
-    """A document-signing certificate from the test root whose validity ended 30 days ago."""
+def _expired_from_root(cn: str, *, eku=None) -> Identity:
+    """A certificate from the test root whose validity ended 30 days ago."""
     pki = test_pki()
     root_key = serialization.load_der_private_key(pki.root.key.dump(), password=None)
     root_name = x509.load_der_x509_certificate(pki.root.cert.dump()).subject
     now = dt.datetime.now(dt.timezone.utc)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    cert = _issue("Expired Supplier SA", key, root_name, root_key,
+    cert = _issue(cn, key, root_name, root_key, eku=eku,
                   not_before=now - dt.timedelta(days=400),
                   not_after=now - dt.timedelta(days=30))
     return _to_asn1(cert, key)
+
+
+@lru_cache(maxsize=1)
+def expired_signer() -> Identity:
+    """A document-signing certificate from the test root whose validity ended 30 days ago."""
+    return _expired_from_root("Expired Supplier SA")
+
+
+@lru_cache(maxsize=1)
+def expired_tsa() -> Identity:
+    """A TSA certificate from the test root whose validity ended 30 days ago."""
+    return _expired_from_root("FakeSpotter Expired TSA", eku=[ExtendedKeyUsageOID.TIME_STAMPING])
 
 
 # Pytest would otherwise try to collect the factory and the dataclass.
@@ -135,13 +146,14 @@ def make_pdf(text: str = "INVOICE 0001 - Total: USD 1,234.56") -> bytes:
     return data
 
 
-def _timestamper():
+def _timestamper(tsa: Identity | None = None, fixed_dt: dt.datetime | None = None):
     from pyhanko.sign.timestamps import DummyTimeStamper
     from pyhanko_certvalidator.registry import SimpleCertificateStore
 
     pki = test_pki()
+    tsa = tsa or pki.tsa
     return DummyTimeStamper(
-        tsa_cert=pki.tsa.cert, tsa_key=pki.tsa.key,
+        tsa_cert=tsa.cert, tsa_key=tsa.key, fixed_dt=fixed_dt,
         certs_to_embed=SimpleCertificateStore.from_certs([pki.root.cert]),
     )
 
@@ -179,8 +191,13 @@ def tamper_signed_content(signed_pdf: bytes) -> bytes:
 # RFC 3161
 # ---------------------------------------------------------------------------
 
-def make_tsr(document: bytes) -> bytes:
-    """A granted TimeStampResp from the local TSA over SHA-256(document)."""
+def make_tsr(document: bytes, *, tsa: Identity | None = None,
+             fixed_dt: dt.datetime | None = None) -> bytes:
+    """A granted TimeStampResp from the local TSA over SHA-256(document).
+
+    ``tsa`` swaps the TSA identity (e.g. :func:`expired_tsa`); ``fixed_dt``
+    sets the token's genTime instead of now.
+    """
     req = tsp.TimeStampReq({
         "version": 1,
         "message_imprint": tsp.MessageImprint({
@@ -190,5 +207,5 @@ def make_tsr(document: bytes) -> bytes:
         "nonce": 0x5EED,
         "cert_req": True,
     })
-    resp = _timestamper().request_tsa_response(req)
+    resp = _timestamper(tsa, fixed_dt).request_tsa_response(req)
     return resp.dump()
