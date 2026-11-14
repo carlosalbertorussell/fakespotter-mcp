@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -279,7 +279,7 @@ class AnalyzePDFMetadataInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_analyze_pdf_metadata(mcp: FastMCP) -> None:
+def register_analyze_pdf_metadata(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="analyze_pdf_metadata",
@@ -375,5 +375,5 @@ def register_analyze_pdf_metadata(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_analyze_pdf_metadata(mcp)

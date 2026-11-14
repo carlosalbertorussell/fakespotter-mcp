@@ -10,7 +10,7 @@ import re
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from utils.i18n import i18n
@@ -94,7 +94,7 @@ _CHAIN_BLOCKCHAIR_SLUG = {
 }
 
 
-def register_scan_blockchain_provenance(mcp: FastMCP) -> None:
+def register_scan_blockchain_provenance(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="scan_blockchain_provenance",
@@ -265,7 +265,7 @@ class VerifyNFTInput(BaseModel):
         return v.lower()
 
 
-def register_verify_nft_authenticity(mcp: FastMCP) -> None:
+def register_verify_nft_authenticity(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="verify_nft_authenticity",
@@ -367,6 +367,6 @@ def register_verify_nft_authenticity(mcp: FastMCP) -> None:
 # Registration entry point
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_scan_blockchain_provenance(mcp)
     register_verify_nft_authenticity(mcp)

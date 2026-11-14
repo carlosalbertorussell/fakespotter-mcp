@@ -12,7 +12,7 @@ import json
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from backends import HFTextBackend
@@ -63,7 +63,7 @@ class DetectAITextInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_detect_ai_generated_text(mcp: FastMCP) -> None:
+def register_detect_ai_generated_text(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="detect_ai_generated_text",
@@ -210,7 +210,7 @@ class AnalyzeFileMetadataInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_analyze_file_metadata(mcp: FastMCP) -> None:
+def register_analyze_file_metadata(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="analyze_file_metadata",
@@ -369,7 +369,7 @@ class VerifyDocumentIntegrityInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_verify_document_integrity(mcp: FastMCP) -> None:
+def register_verify_document_integrity(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="verify_document_integrity",
@@ -452,7 +452,7 @@ def register_verify_document_integrity(mcp: FastMCP) -> None:
 # Registration entry point
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_detect_ai_generated_text(mcp)
     register_analyze_file_metadata(mcp)
     register_verify_document_integrity(mcp)

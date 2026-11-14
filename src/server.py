@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 import tools.media_tools       as _media
 import tools.financial_tools   as _financial
@@ -52,10 +52,9 @@ logger = logging.getLogger("fakespotter")
 # Server initialisation
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP(
+# mcp 2.x: transport settings (host/port) are passed to run(), not the constructor.
+mcp = MCPServer(
     "fakespotter_mcp",
-    host="0.0.0.0",
-    port=_PORT,
     instructions=(
         "FakeSpotter is a forensic suite for digital evidence authentication. "
         "The recommended workflow is FakeSpotter Invoice Guard: a four-step "
@@ -107,4 +106,6 @@ logger.info("FakeSpotter MCP server initialised — 29 forensic tools registered
 
 if __name__ == "__main__":
     logger.info("Starting FakeSpotter on 0.0.0.0:%d", _PORT)
-    mcp.run(transport="streamable-http")
+    # host must be explicit: MCPServer.run() defaults to 127.0.0.1, which would
+    # make the container unreachable.
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=_PORT)

@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.analysis import (
@@ -74,7 +74,7 @@ class AuditDeepfakeVideoInput(BaseModel):
     sample_frames: int = Field(8, ge=4, le=20)
 
 
-def register_audit_deepfake_video(mcp: FastMCP) -> None:
+def register_audit_deepfake_video(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="audit_deepfake_video",
@@ -207,7 +207,7 @@ class DetectAIImageInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_detect_ai_generated_image(mcp: FastMCP) -> None:
+def register_detect_ai_generated_image(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="detect_ai_generated_image",
@@ -295,7 +295,7 @@ class AnalyzeAudioInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_analyze_audio_authenticity(mcp: FastMCP) -> None:
+def register_analyze_audio_authenticity(mcp: MCPServer) -> None:
     import re
     @mcp.tool(name="analyze_audio_authenticity",
               annotations={"title": "Audio Authenticity Analyser",
@@ -416,7 +416,7 @@ class VerifyVideoMetadataInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_verify_video_metadata(mcp: FastMCP) -> None:
+def register_verify_video_metadata(mcp: MCPServer) -> None:
     @mcp.tool(name="verify_video_metadata",
               annotations={"title": "Video Metadata Verifier",
                            "readOnlyHint": True, "destructiveHint": False,
@@ -466,7 +466,7 @@ class DetectSteganographyInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_detect_steganography(mcp: FastMCP) -> None:
+def register_detect_steganography(mcp: MCPServer) -> None:
     @mcp.tool(name="detect_steganography",
               annotations={"title": "Steganography Detector",
                            "readOnlyHint": True, "destructiveHint": False,
@@ -523,7 +523,7 @@ class DetectAIMusicInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_detect_ai_generated_music(mcp: FastMCP) -> None:
+def register_detect_ai_generated_music(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="detect_ai_generated_music",
@@ -660,7 +660,7 @@ def register_detect_ai_generated_music(mcp: FastMCP) -> None:
 # Registration entry point
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_audit_deepfake_video(mcp)
     register_detect_ai_generated_image(mcp)
     register_analyze_audio_authenticity(mcp)

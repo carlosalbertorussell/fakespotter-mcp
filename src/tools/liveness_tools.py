@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -129,7 +129,7 @@ class ValidateIdentityLivenessInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_validate_identity_liveness(mcp: FastMCP) -> None:
+def register_validate_identity_liveness(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="validate_identity_liveness",
@@ -308,5 +308,5 @@ def register_validate_identity_liveness(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_validate_identity_liveness(mcp)
