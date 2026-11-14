@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -190,7 +190,7 @@ class VerifyRFC3161TimestampInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_verify_rfc3161_timestamp(mcp: FastMCP) -> None:
+def register_verify_rfc3161_timestamp(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="verify_rfc3161_timestamp",
@@ -338,5 +338,5 @@ def register_verify_rfc3161_timestamp(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_verify_rfc3161_timestamp(mcp)

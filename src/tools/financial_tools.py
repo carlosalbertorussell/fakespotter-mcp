@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.analysis import (
@@ -59,7 +59,7 @@ class VerifyCurrencyInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_verify_physical_currency(mcp: FastMCP) -> None:
+def register_verify_physical_currency(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="verify_physical_currency",
@@ -168,7 +168,7 @@ class ValidateIdentityDocInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_validate_identity_doc(mcp: FastMCP) -> None:
+def register_validate_identity_doc(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="validate_identity_doc",
@@ -279,7 +279,7 @@ class DetectDocumentForgeryInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_detect_document_forgery(mcp: FastMCP) -> None:
+def register_detect_document_forgery(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="detect_document_forgery",
@@ -375,7 +375,7 @@ def register_detect_document_forgery(mcp: FastMCP) -> None:
 # Registration entry point
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_verify_physical_currency(mcp)
     register_validate_identity_doc(mcp)
     register_detect_document_forgery(mcp)

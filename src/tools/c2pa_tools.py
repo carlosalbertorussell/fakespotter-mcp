@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field, ConfigDict
 
 from utils.i18n import i18n
@@ -196,7 +196,7 @@ class VerifyC2PAManifestInput(BaseModel):
     report_mode: Literal["quick", "full"] = Field("quick")
 
 
-def register_verify_c2pa_manifest(mcp: FastMCP) -> None:
+def register_verify_c2pa_manifest(mcp: MCPServer) -> None:
 
     @mcp.tool(
         name="verify_c2pa_manifest",
@@ -350,5 +350,5 @@ def register_verify_c2pa_manifest(mcp: FastMCP) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_all(mcp: FastMCP) -> None:
+def register_all(mcp: MCPServer) -> None:
     register_verify_c2pa_manifest(mcp)
