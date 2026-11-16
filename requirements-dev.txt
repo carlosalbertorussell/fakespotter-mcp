@@ -3,4 +3,4 @@
 -r requirements.txt
 pytest>=8.3,<10
 # Generates QR fixtures at test time (pure Python; renders through Pillow).
-qrcode>=8.0,<9
+qrcode>=8.2,<9
