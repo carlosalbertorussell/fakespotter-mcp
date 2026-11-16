@@ -4,7 +4,7 @@
 # la API v2 (MCPServer); el tope <3 sigue siendo obligatorio.
 mcp>=2.3.0,<3
 httpx>=0.28.1,<1
-yt-dlp>=2026.8.19,<2027
+yt-dlp>=2026.10.26,<2027
 Pillow>=13.0.0,<14
 python-dotenv>=1.2.4,<2
 opencv-python-headless>=4.13.0.92,<5
