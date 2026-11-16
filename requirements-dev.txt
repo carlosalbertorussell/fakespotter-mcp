@@ -1,6 +1,6 @@
 # Test-only dependencies for the real-library regression suite in tests/.
 # Runtime pins live in requirements.txt (installed first).
 -r requirements.txt
-pytest>=8.3,<10
+pytest>=9.2.0,<10
 # Generates QR fixtures at test time (pure Python; renders through Pillow).
 qrcode>=8.0,<9
