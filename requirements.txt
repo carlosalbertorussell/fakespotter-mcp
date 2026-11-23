@@ -8,7 +8,7 @@ yt-dlp>=2026.8.19,<2027
 Pillow>=13.0.0,<14
 python-dotenv>=1.2.4,<2
 opencv-python-headless>=4.13.0.92,<5
-numpy>=2.5.4,<3
+numpy>=2.5.5,<3
 uvicorn>=0.54.0,<1
 # Dependencia directa: la importan los 6 modulos de src/tools/.
 # Hoy funciona solo porque `mcp` la arrastra; si eso cambia, rompe sin aviso.
