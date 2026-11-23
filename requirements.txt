@@ -7,7 +7,7 @@ httpx>=0.28.1,<1
 yt-dlp>=2026.8.19,<2027
 Pillow>=13.0.0,<14
 python-dotenv>=1.2.4,<2
-opencv-python-headless>=4.13.0.92,<5
+opencv-python-headless>=5.1.0.95,<6
 numpy>=2.5.4,<3
 uvicorn>=0.54.0,<1
 # Dependencia directa: la importan los 6 modulos de src/tools/.
